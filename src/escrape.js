@@ -69,8 +69,6 @@ const defaultConfig = {
 }
 
 class Escrape {
-    #visualSelector
-
     constructor(element, config = defaultConfig) {
         this.setConfig(config)
         this.element = element // document.createElement('body')
@@ -80,9 +78,6 @@ class Escrape {
 
     setConfig(config) {
         this.config = {...defaultConfig, ...config}
-        this.#visualSelector = this.config.selectors.descriptiveTags.join(',')
-            + ',' + this.config.selectors.interactiveTags.join(',')
-            + ',[role=' + this.config.selectors.interactiveRoles.join('],[role=') + ']'
     }
 
 	getDescription(document) {
@@ -128,12 +123,12 @@ class Escrape {
         }
     }
 
-    isVisualContainer(node) {
+    isSelectorContainer(node, selector) {
         const text = this.getNodeText(node)
         if (text.length < 75 || text.split(',').length < 5) // TODO:
             return true
 
-        const fill = this.calculateTextFill(this.#visualSelector, node, text)
+        const fill = this.calculateTextFill(selector, node, text)
         if (fill.textLengthRatio > 0.4) // TODO:
             return true
         if (fill.nodePerChar > 1000) // TODO:
@@ -141,39 +136,22 @@ class Escrape {
         return false
     }
 
-    *getVisualContainers(node = this.element) {
-        const loopNodes = [...node.querySelectorAll(this.#visualSelector)]
+    *getSelectorContainers(node = this.element, selector, title = '') {
+        const nodes = [...node.querySelectorAll(selector)]
+        const property = `_${title}State`
 
         let currentNode
-        while (currentNode = loopNodes.shift()) {
-            currentNode._visualState = 'visual'
+        while (currentNode = nodes.shift()) {
+            currentNode[property] = true
 
             const parent = currentNode.parentNode
             if (parent) {
-                if (parent._visualState)
+                if (parent[property] != null)
                     continue
-                parent._visualState = 'nonvisual'
-
-                if (this.isVisualContainer(parent)) {
-                    loopNodes.push(parent)
-                    parent._visualState = 'visual'
-                    currentNode._visualState = 'intermediate'
-                }
+                if (parent[property] = this.isSelectorContainer(parent, selector))
+                    nodes.push(parent)
             }
             yield currentNode
-        }
-    }
-
-    *getTopmostVisualContainers(node = this.element) {
-        for (const n of this.getVisualContainers(node)) {
-            let traverseNode = n.parentNode
-            while (traverseNode) {
-                if (traverseNode._visualState == 'visual')
-                    break
-                traverseNode = traverseNode.parentNode
-            }
-            if (traverseNode)
-                yield n
         }
     }
 
@@ -201,18 +179,23 @@ class Escrape {
     }
 
     getReadableContainers(topN = null, node = this.element) {
+        const readableSelector = this.config.selectors.readableTags.join(',')
+        const visualSelector = this.config.selectors.descriptiveTags.join(',')
+            + ',' + this.config.selectors.interactiveTags.join(',')
+            + ',[role=' + this.config.selectors.interactiveRoles.join('],[role=') + ']'
+            + ',.' + this.config.selectors.asideClasses.join(',.')
+
         for (const e of node.querySelectorAll(this.config.selectors.metaTags))
             this.markAsNontext(e)
-        for (const e of this.getVisualContainers(node))
+        for (const e of this.getSelectorContainers(node, visualSelector, 'visual'))
             this.markAsNontext(e)
         for (const e of this.getHyperlinkContainers(node))
             this.markAsNontext(e)
 
         let eligibleNodes = []
-        const selector = this.config.selectors.readableTags.join(',')
-        const readableNodes = this.element.querySelectorAll(selector)
+        const readableNodes = this.element.querySelectorAll(readableSelector)
         for (const n of readableNodes) {
-            let weight = this.calculateWeight(n)
+            let weight = this.calculateWeight(n, visualSelector)
             if (!weight)
                 continue
 
@@ -236,11 +219,11 @@ class Escrape {
         return eligibleNodes
     }
 
-    calculateWeight(node = this.element) {
+    calculateWeight(node = this.element, selector) {
         const text = this.getNodeText(node)
         if (text.length < 25) // TODO:
             return 0
-        const fill = this.calculateTextFill(this.#visualSelector, node, text)
+        const fill = this.calculateTextFill(selector, node, text)
         const score = 1
             + text.split(',').length
             + Math.min(text.length / 100, 3)
