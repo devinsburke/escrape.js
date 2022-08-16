@@ -72,6 +72,7 @@ class Escrape {
     constructor(element, config = defaultConfig) {
         this.setConfig(config)
         this.element = element // document.createElement('body')
+        this.iterator = 0
         // TODO: The next line messes up text inside of pre, input, etc.
         //this.element.innerHTML = this.collapseWhitespace(element.innerHTML)
     }
@@ -81,34 +82,34 @@ class Escrape {
     }
 
 	getDescription(document) {
-		var metas = this.element.querySelectorAll('meta[description],meta[name=description],meta[property=og\\:description]');
-		for (var meta of metas) {
+		const metas = this.element.querySelectorAll('meta[description],meta[name=description],meta[property=og\\:description]')
+		for (const meta of metas) {
 			if (meta.description)
-				return meta.description;
+				return meta.description
 			if (meta.content)
-				return meta.content;
+				return meta.content
 		}
-		var shortDescription = this.element.querySelectorAll('.shortdescription');
+		const shortDescription = this.element.querySelectorAll('.shortdescription')
 		if (shortDescription.length == 1)
-			return shortDescription[0].innerText; // TODO: Convert to method?
+			return shortDescription[0].innerText // TODO: Convert to method?
 
-		return '';
+		return ''
 	}
 
 	getTitle(document) {
-		var h1s = this.element.querySelectorAll('h1')
+		const h1s = this.element.querySelectorAll('h1')
 		if (h1s.length == 1)
 			return h1s[0].innerText // TODO: Convert to method?
 		return document.title.split(' - ')[0].trim()
     }
     
-    calculateTextFill(selector, node = this.element, baseText = null) {
-        baseText ??= this.getNodeText(node)
+    calculateTextFill(selector, node, iteration, baseText = null) {
+        baseText ??= this.getNodeText(node, iteration)
         const baseTextLength = baseText.length
         const selectedNodes = node.querySelectorAll(selector)
         let selectedTextLength = 0
         for (const n of selectedNodes)
-            selectedTextLength += this.getNodeText(n).length
+            selectedTextLength += this.getNodeText(n, iteration).length
         
         const unselectedTextLength = baseTextLength - selectedTextLength
 
@@ -123,12 +124,12 @@ class Escrape {
         }
     }
 
-    isSelectorContainer(node, selector) {
-        const text = this.getNodeText(node)
-        if (text.length < 75 || text.split(',').length < 5) // TODO:
+    isSelectorContainer(node, iteration, selector) {
+        const text = this.getNodeText(node, iteration)
+        if (text.length < 75) // TODO: //  || text.split(',').length < 5
             return true
 
-        const fill = this.calculateTextFill(selector, node, text)
+        const fill = this.calculateTextFill(selector, node, iteration, text)
         if (fill.textLengthRatio > 0.4) // TODO:
             return true
         if (fill.nodePerChar > 1000) // TODO:
@@ -136,7 +137,7 @@ class Escrape {
         return false
     }
 
-    *getSelectorContainers(node = this.element, selector, title = '') {
+    *getSelectorContainers(node, iteration, selector, title = '') {
         const nodes = [...node.querySelectorAll(selector)]
         const property = `_${title}State`
 
@@ -148,18 +149,18 @@ class Escrape {
             if (parent) {
                 if (parent[property] != null)
                     continue
-                if (parent[property] = this.isSelectorContainer(parent, selector))
+                if (parent[property] = this.isSelectorContainer(parent, iteration, selector))
                     nodes.push(parent)
             }
             yield currentNode
         }
     }
 
-    *getHyperlinkContainers(node = this.element) {
+    *getHyperlinkContainers(node, iteration) {
         const selector = this.config.selectors.listableTags.join(',')
         const itemNodes = node.querySelectorAll(selector)
         for (const n of itemNodes) {
-            const fill = this.calculateTextFill('a', node)
+            const fill = this.calculateTextFill('a', node, iteration)
             if (fill.textLengthRatio > 0.4) // TODO:
                 yield n
         }
@@ -167,7 +168,7 @@ class Escrape {
         const divNodes = node.querySelectorAll('div>a,section>a') // TODO:
         for (const n of divNodes) {
             const parent = n.parentNode
-            const fill = this.calculateTextFill('a', parent)
+            const fill = this.calculateTextFill('a', parent, iteration)
             if (fill.textLengthRatio > 0.4) // TODO:
                 yield parent
         }
@@ -185,17 +186,18 @@ class Escrape {
             + ',[role=' + this.config.selectors.interactiveRoles.join('],[role=') + ']'
             + ',.' + this.config.selectors.asideClasses.join(',.')
 
+        const iteration = ++this.iterator
         for (const e of node.querySelectorAll(this.config.selectors.metaTags))
-            this.markAsNontext(e)
-        for (const e of this.getSelectorContainers(node, visualSelector, 'visual'))
-            this.markAsNontext(e)
-        for (const e of this.getHyperlinkContainers(node))
-            this.markAsNontext(e)
+            this.setValue(e, iteration, 'nontext', true)
+        for (const e of this.getSelectorContainers(node, iteration, visualSelector, 'visual'))
+            this.setValue(e, iteration, 'nontext', true)
+        for (const e of this.getHyperlinkContainers(node, iteration))
+            this.setValue(e, iteration, 'nontext', true)
 
         let eligibleNodes = []
         const readableNodes = this.element.querySelectorAll(readableSelector)
         for (const n of readableNodes) {
-            let weight = this.calculateWeight(n, visualSelector)
+            let weight = this.calculateWeight(n, iteration, visualSelector)
             if (!weight)
                 continue
 
@@ -203,68 +205,69 @@ class Escrape {
             let p = n.parentNode
             
             while (p && --i) {
-                if (p._score == null) {
-                    this.scoreContainer(p)
+                let score = this.getValue(p, iteration, 'score')
+                if (score == null) {
+                    score = this.scoreContainer(p, iteration)
                     eligibleNodes.push(p)
                 }
-                p._score += weight
+                this.setValue(p, iteration, 'score', score + weight)
                 weight /= 2
                 p = p.parentNode
             }
         }
 
-        eligibleNodes = eligibleNodes.filter(n => n._score > 0)
-        eligibleNodes = eligibleNodes.sort((a,b) => b._score - a._score)
+        eligibleNodes = eligibleNodes.filter(n => this.getValue(n, iteration, 'score') > 0)
+        eligibleNodes = eligibleNodes.sort((a,b) => this.getValue(b, iteration, 'score') - this.getValue(a, iteration, 'score'))
         eligibleNodes = eligibleNodes.slice(0, topN || eligibleNodes.length)
         return eligibleNodes
     }
 
-    calculateWeight(node = this.element, selector) {
-        const text = this.getNodeText(node)
+    calculateWeight(node, iteration, selector) {
+        const text = this.getNodeText(node, iteration)
         if (text.length < 25) // TODO:
             return 0
-        const fill = this.calculateTextFill(selector, node, text)
-        const score = 1
+        const fill = this.calculateTextFill(selector, node, iteration, text)
+        return 1
             + text.split(',').length
             + Math.min(text.length / 100, 3)
             + 1 - fill.textLengthRatio
+    }
+
+    scoreContainer(node, iteration) {
+        const tagName = node.tagName.toLowerCase()
+        const searchStr =`${node.className.toLowerCase()} ${node.id.toLowerCase()} ${tagName}`
+        let score = 0
+        for (const k in this.config.keywords)
+            if (searchStr.includes(k))
+                score += this.config.keywords[k]
+        if (['div', 'p', 'section', 'article'].includes(tagName)) // TODO:
+            score += 5
+        else if (this.config.selectors.readableTags.includes(tagName))
+            score += 3
+        else if (this.config.selectors.listItemTags.includes(tagName))
+            score -= 3
+        this.setValue(node, iteration, 'score', score)
         return score
     }
 
-    scoreContainer(node = this.element) {
-        const tagName = node.tagName.toLowerCase()
-        const searchStr =`${node.className.toLowerCase()} ${node.id.toLowerCase()} ${tagName}`
-        node._score = 0
-        for (const k in this.config.keywords)
-            if (searchStr.includes(k))
-                node._score += this.config.keywords[k]
-        if (['div', 'p', 'section', 'article'].includes(tagName)) // TODO:
-            node._score += 5
-        else if (this.config.selectors.readableTags.includes(tagName))
-            node._score += 3
-        else if (this.config.selectors.listItemTags.includes(tagName))
-            node._score -= 3
-        return node._score
-    }
-
-	extractReadableContent(node = this.element) {
+	extractReadableContent(node, iteration) {
         // TODO: Write this method.
 
         // .replace(/ {2,}/g, ' ')
 	    // .replace(/[\r\n\t]+/g, '\n')
 
-        return this.getNodeText(node)
+        return this.getNodeText(node, iteration)
     }
 
-    getNodeText(node = this.element, collapseWhitespace = true, lowercase = false) {
-        let text = this.#getNodeText(node)
+    getNodeText(node, iteration, collapseWhitespace = true, lowercase = false) {
+        let text = this.#getNodeText(node, iteration)
         if (collapseWhitespace)
             text = this.collapseWhitespace(text)
         if (lowercase)
             text = text.toLowerCase()
         return text
     }
-    #getNodeText(node) {
+    #getNodeText(node, iteration) {
         let text = ''
         let child = node.firstChild
         let isBlock = false
@@ -273,14 +276,14 @@ class Escrape {
             if (child.nodeType == Node.TEXT_NODE) {
                 text += child.textContent.trim() + ' '
                 isBlock = false
-            } else if (child.nodeType == Node.ELEMENT_NODE && !this.isMarkedAsNontext(child) && !this.isHidden(child)) {
+            } else if (child.nodeType == Node.ELEMENT_NODE && !this.getValue(child, iteration, 'nontext') && !this.isHidden(child)) {
                 const lastBlock = isBlock
                 isBlock = this.#isBlockElement(child)
 
                 if (isBlock && !lastBlock)
                     text += '\n'
 
-                text += this.#getNodeText(child)
+                text += this.#getNodeText(child, iteration)
 
                 if (isBlock)
                     text += '\n'
@@ -290,16 +293,52 @@ class Escrape {
         return text
     }
 
+    getNodeTextLength(node, iteration) {
+        return this.#getNodeTextLength(node, iteration)
+    }
+    #getNodeTextLength(node, iteration) {
+        let len = this.getValue(child, iteration, 'textlength') || 0
+        if (len)
+            return prop
+        let child = node.firstChild
+
+        while (child) {
+            if (child.nodeType == Node.TEXT_NODE) {
+                len += child.textContent.trim().length
+            } else if (child.nodeType == Node.ELEMENT_NODE) {
+                if (!this.isIgnored(child, iteration) && !this.isHidden(child)) {
+                    const result = this.#getNodeTextLength(child, iteration)
+                    this.setValue(child, iteration, 'textlength', result)
+                    len += result
+                }
+            }
+            child = child.nextSibling
+        }
+        return len
+    }
+
+    isIgnored(node, iteration) {
+        return this.getValue(node, iteration, 'nontext')
+    }
+
+    ignore(node, iteration, ignore = true) {
+        this.setValue(node, iteration, 'nontext', ignore)
+        this.setValue(node, iteration, 'textlength', ignore ? 0 : undefined)
+    }
+
     collapseWhitespace(str) {
         return str.replace(/\s+/g, ' ')
     }
 
-    markAsNontext(node, isNontext = true) {
-        node._nontext = isNontext
+    getValue(node, iteration, property) {
+        if (node._escrape && node._escrape[iteration])
+            return node._escrape[iteration][property]
     }
 
-    isMarkedAsNontext(node) {
-        return node._nontext
+    setValue(node, iteration, property, value) {
+        node._escrape ??= {}
+        node._escrape[iteration] ??= {}
+        node._escrape[iteration][property] = value        
     }
 
     isHidden(node) {
