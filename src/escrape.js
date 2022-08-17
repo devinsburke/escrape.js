@@ -103,18 +103,15 @@ class Escrape {
 		return document.title.split(' - ')[0].trim()
     }
     
-    calculateTextFill(selector, node, iteration, baseText = null) {
-        baseText ??= this.getNodeText(node, iteration)
-        const baseTextLength = baseText.length
+    calculateTextFill(selector, node, iteration, baseTextLength = null) {
+        baseTextLength ??= this.getNodeTextLength(node, iteration)
         const selectedNodes = node.querySelectorAll(selector)
         let selectedTextLength = 0
         for (const n of selectedNodes)
-            selectedTextLength += this.getNodeText(n, iteration).length
-        
+            selectedTextLength += this.getNodeTextLength(n, iteration)
         const unselectedTextLength = baseTextLength - selectedTextLength
 
         return {
-            baseText,
             baseTextLength,
             selectedNodes,
             selectedTextLength,
@@ -125,11 +122,11 @@ class Escrape {
     }
 
     isSelectorContainer(node, iteration, selector) {
-        const text = this.getNodeText(node, iteration)
-        if (text.length < 75) // TODO: //  || text.split(',').length < 5
+        const textLength = this.getNodeTextLength(node, iteration)
+        if (textLength < 75) // TODO: //  || text.split(',').length < 5
             return true
 
-        const fill = this.calculateTextFill(selector, node, iteration, text)
+        const fill = this.calculateTextFill(selector, node, iteration, textLength)
         if (fill.textLengthRatio > 0.4) // TODO:
             return true
         if (fill.nodePerChar > 1000) // TODO:
@@ -139,17 +136,19 @@ class Escrape {
 
     *getSelectorContainers(node, iteration, selector, title = '') {
         const nodes = [...node.querySelectorAll(selector)]
-        const property = `_${title}State`
+        const property = `${title}State`
 
         let currentNode
         while (currentNode = nodes.shift()) {
-            currentNode[property] = true
+            this.setValue(currentNode, iteration, property, true)
 
             const parent = currentNode.parentNode
             if (parent) {
-                if (parent[property] != null)
+                if (this.getValue(parent, iteration, property) != null)
                     continue
-                if (parent[property] = this.isSelectorContainer(parent, iteration, selector))
+                const isContainer = this.isSelectorContainer(parent, iteration, selector)
+                this.setValue(parent, iteration, property, isContainer)
+                if (isContainer)
                     nodes.push(parent)
             }
             yield currentNode
@@ -165,7 +164,7 @@ class Escrape {
                 yield n
         }
 
-        const divNodes = node.querySelectorAll('div>a,section>a') // TODO:
+        const divNodes = node.querySelectorAll('div>a:first-of-type,section>a:first-of-type') // TODO:
         for (const n of divNodes) {
             const parent = n.parentNode
             const fill = this.calculateTextFill('a', parent, iteration)
@@ -193,24 +192,20 @@ class Escrape {
             this.setValue(e, iteration, 'nontext', true)
         for (const e of this.getHyperlinkContainers(node, iteration))
             this.setValue(e, iteration, 'nontext', true)
-
+        
         let eligibleNodes = []
         const readableNodes = this.element.querySelectorAll(readableSelector)
         for (const n of readableNodes) {
-            let weight = this.calculateWeight(n, iteration, visualSelector)
-            if (!weight)
-                continue
+            //const fill = this.calculateTextFill(visualSelector, n, iteration)
+            //const weight = Math.min(fill.unselectedTextLength / 100, 5) - fill.textLengthRatio
+            //if (!weight) return
+            let weight = Math.min(this.getNodeTextLength(n, iteration) / 100, 5)
 
             let i = 2 // TODO:
             let p = n.parentNode
-            
             while (p && --i) {
-                let score = this.getValue(p, iteration, 'score')
-                if (score == null) {
-                    score = this.scoreContainer(p, iteration)
+                if (this.scoreContainer(p, iteration, weight))
                     eligibleNodes.push(p)
-                }
-                this.setValue(p, iteration, 'score', score + weight)
                 weight /= 2
                 p = p.parentNode
             }
@@ -222,35 +217,28 @@ class Escrape {
         return eligibleNodes
     }
 
-    calculateWeight(node, iteration, selector) {
-        const text = this.getNodeText(node, iteration)
-        if (text.length < 25) // TODO:
-            return 0
-        const fill = this.calculateTextFill(selector, node, iteration, text)
-        return 1
-            + text.split(',').length
-            + Math.min(text.length / 100, 3)
-            + 1 - fill.textLengthRatio
-    }
-
-    scoreContainer(node, iteration) {
+    scoreContainer(node, iteration, weight) {
+        let score = this.getValue(node, iteration, 'score')
+        if (score != null) {
+            this.setValue(node, iteration, 'score', score + weight)
+            return false
+        }
         const tagName = node.tagName.toLowerCase()
         const searchStr =`${node.className.toLowerCase()} ${node.id.toLowerCase()} ${tagName}`
-        let score = 0
+        score = 0
         for (const k in this.config.keywords)
             if (searchStr.includes(k))
                 score += this.config.keywords[k]
-        if (['div', 'p', 'section', 'article'].includes(tagName)) // TODO:
-            score += 5
         else if (this.config.selectors.readableTags.includes(tagName))
-            score += 3
+            score += 5
         else if (this.config.selectors.listItemTags.includes(tagName))
-            score -= 3
-        this.setValue(node, iteration, 'score', score)
-        return score
+            score -= 5
+        this.setValue(node, iteration, 'score', score + weight)
+        return true
     }
 
-	extractReadableContent(node, iteration) {
+	extractReadableTextNodes(node, iteration) {
+
         // TODO: Write this method.
 
         // .replace(/ {2,}/g, ' ')
@@ -259,15 +247,15 @@ class Escrape {
         return this.getNodeText(node, iteration)
     }
 
-    getNodeText(node, iteration, collapseWhitespace = true, lowercase = false) {
-        let text = this.#getNodeText(node, iteration)
+    getTextNodes(node, iteration, collapseWhitespace = true, lowercase = false) {
+        let text = this.#getTextNodes(node, iteration)
         if (collapseWhitespace)
             text = this.collapseWhitespace(text)
         if (lowercase)
             text = text.toLowerCase()
         return text
     }
-    #getNodeText(node, iteration) {
+    #getTextNodes(node, iteration) {
         let text = ''
         let child = node.firstChild
         let isBlock = false
@@ -283,7 +271,7 @@ class Escrape {
                 if (isBlock && !lastBlock)
                     text += '\n'
 
-                text += this.#getNodeText(child, iteration)
+                text += this.#getTextNodes(child, iteration)
 
                 if (isBlock)
                     text += '\n'
@@ -297,9 +285,8 @@ class Escrape {
         return this.#getNodeTextLength(node, iteration)
     }
     #getNodeTextLength(node, iteration) {
-        let len = this.getValue(child, iteration, 'textlength') || 0
-        if (len)
-            return prop
+        let len = this.getValue(node, iteration, 'textlength') || 0
+        if (len) return len
         let child = node.firstChild
 
         while (child) {
