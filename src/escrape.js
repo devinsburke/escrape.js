@@ -24,7 +24,9 @@ const defaultConfig = {
         '+ol ': -5,
         '+td ': -5,
         '+ul ': -5,
+        '.grid': -25,
         'attribution': -25,
+        'blocks': -25,
         'combx': -25,
         'comment': -25,
         'contact': -25,
@@ -33,6 +35,7 @@ const defaultConfig = {
         'footer': -25,
         'footnote': -25,
         'infobox': -25,
+        'masonry': -25,
         'masthead': -25,
         'media': -25,
         'meta': -25,
@@ -66,8 +69,7 @@ const defaultConfig = {
     },
     selectors: {
         blockDisplayStyles: ['block', 'flex', 'grid', 'inline-block', 'inline-flex'],
-        blockTags: ['address', 'article', 'aside', 'blockquote', 'br', 'canvas', 'dd', 'div', 'fieldset', 'figcaption', 'figure', 'footer', 'form', 'hr', 'li', 'main', 'nav', 'noscript', 'ol', 'p', 'pre', 'section', 'table', 'td', 'th', 'tr', 'thead', 'tfoot', 'ul', 'video'],
-
+        blockTags: ['address', 'article', 'aside', 'blockquote', 'br', 'canvas', 'dd', 'div', 'fieldset', 'figcaption', 'figure', 'footer', 'form', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'header', 'hr', 'li', 'main', 'nav', 'noscript', 'ol', 'p', 'pre', 'section', 'table', 'td', 'th', 'tr', 'thead', 'tfoot', 'ul', 'video'],
         readableTags: ['article', 'div', 'p', 'pre', 'section', 'span', 'td'],
         listableTags: ['dd', 'div', 'dl', 'dt', 'li', 'ol', 'p', 'td', 'ul'],
         headingTags: ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'],
@@ -77,9 +79,9 @@ const defaultConfig = {
         interactiveRoles: ['alert', 'alertdialog', 'banner', 'button', 'columnheader', 'combobox', 'dialog', 'directory', 'figure', 'heading', 'img', 'listbox', 'marquee', 'math', 'menu', 'menubar', 'menuitem', 'navigation', 'option', 'search', 'searchbox', 'status', 'toolbar', 'tooltip'],
         asideClasses: ['blogroll', 'caption', 'citation', 'comment', 'community', 'contact', 'copyright', 'extra', 'foot', 'footer', 'footnote', 'infobox', 'masthead', 'media', 'meta', 'metadata', 'mw-jump-link', 'mw-revision', 'navigation', 'navigation-not-searchable', 'noprint', 'outbrain', 'pager', 'popup', 'promo', 'reference', 'reference-text', 'references', 'related', 'related-articles', 'remark', 'rss', 's-popover', 'scroll', 'shopping', 'shoutbox', 'sidebar', 'sponsor', 'tag-cloud', 'tags', 'thumb', 'tool', 'user-info', 'widget', 'wikitable'],
     },
-    minimumTextLength: 75,
-    maximumTextLengthRatio: 0.4,
-    textParentHierarchyLevel: 2,
+    minimumTextLengthPerNode: 75,
+    minimumTextLengthRatioPerContainer: 0.4,
+    textContainerTraversalDepth: 2,
 }
 
 class Escrape {
@@ -93,7 +95,7 @@ class Escrape {
         this.config = {...defaultConfig, ...config}
     }
 
-	getDescription(document) {
+	getPageDescription() {
 		const metas = this.element.querySelectorAll('meta[description],meta[name=description],meta[property=og\\:description]')
 		for (const meta of metas) {
 			if (meta.description)
@@ -103,37 +105,22 @@ class Escrape {
 		}
 		const shortDescription = this.element.querySelectorAll('.shortdescription')
 		if (shortDescription.length == 1)
-			return shortDescription[0].innerText // TODO: Convert to method?
+			return shortDescription[0].innerText
 
 		return ''
 	}
 
-	getTitle(document) {
+	getPageTitle(document) {
 		const h1s = this.element.querySelectorAll('h1')
 		if (h1s.length == 1)
-			return h1s[0].innerText // TODO: Convert to method?
-		return document.title.split(' - ')[0].trim()
-    }
-
-    calculateTextFill(selector, node = this.element, iteration = this.iterator) {
-        const textLength = this.getNodeTextLength(node, iteration)
-
-        let selectedTextLength = 0
-        for (const n of node.querySelectorAll(selector))
-            if (!n.closest(selector) && !this.isIgnored(n, iteration) && !this.isHidden(n))
-                selectedTextLength += this.getNodeTextLength(n, iteration)
-        
-        return {
-            selectedTextLength,
-            unselectedTextLength: textLength - selectedTextLength,
-            textLengthRatio: textLength ? selectedTextLength / textLength : 0,
-        }
+			return h1s[0].textContent // TODO: Convert to method?
+		return document.title.split(/( - | \| )/)[0].trim()
     }
 
     isSelectorContainer(selector, node = this.element, iteration = this.iterator) {
-        if (this.getNodeTextLength(node, iteration) >= this.config.minimumTextLength) {
+        if (this.getTextLength(node, iteration) >= this.config.minimumTextLengthPerNode) {
             const fill = this.calculateTextFill(selector, node, iteration)
-            return fill.textLengthRatio > this.config.maximumTextLengthRatio
+            return fill.textLengthRatio > this.config.minimumTextLengthRatioPerContainer
         }
     }
 
@@ -174,104 +161,99 @@ class Escrape {
     getReadableContainers(topN = null, node = this.element, iteration = this.iterator) {
         const visualSelector = this.config.selectors.descriptiveTags.join(',')
             + ',' + this.config.selectors.interactiveTags.join(',')
-            + ',.' + this.config.selectors.asideClasses.join(',.')
             + ',[role=' + this.config.selectors.interactiveRoles.join('],[role=') + ']'
 
         for (const e of node.querySelectorAll(this.config.selectors.metaTags))
+            this.ignore(e, iteration)
+        for (const e of node.querySelectorAll('.' + this.config.selectors.asideClasses.join(',.')))
             this.ignore(e, iteration)
         for (const e of this.getSelectorContainers(visualSelector, 'visual', node, iteration))
             this.ignore(e, iteration)
         for (const e of this.getHyperlinkContainers(node, iteration))
             this.ignore(e, iteration)
         
-        const eligibleNodes = []
+        const nodes = []
         const readableSelector = this.config.selectors.readableTags.join(',')
         for (const n of node.querySelectorAll(readableSelector)) {
-            let weight = Math.min(this.getNodeTextLength(n, iteration) / 100, 5)
-            let i = this.config.textParentHierarchyLevel
+            let weight = Math.min(this.getTextLength(n, iteration) / 100, 5)
+            let i = this.config.textContainerTraversalDepth
             let p = n.parentNode
-            while (p && --i) {
+
+            while (p.parentNode && --i) {
                 if (this.#score(weight, p, iteration))
-                    eligibleNodes.push(p)
+                nodes.push(p)
                 weight /= 2
                 p = p.parentNode
             }
         }
 
-        return eligibleNodes
+        return nodes
             .filter(n => this.getIterationValue('score', n, iteration) > 0)
             .sort((a,b) => this.getIterationValue('score', b, iteration) - this.getIterationValue('score', a, iteration))
-            .slice(0, topN || eligibleNodes.length)
-    }
-
-    #score(weight, node = this.element, iteration = this.iterator) {
-        let score = this.getIterationValue('score', node, iteration)
-        if (score != null) {
-            this.setIterationValue('score', score + weight, node, iteration)
-            return false
-        }
-        const tagName = node.tagName.toLowerCase()
-        const searchStr =`.${node.className.toLowerCase()} #${node.id.toLowerCase()} +${tagName} `
-        score = 0
-        for (const k in this.config.keywords)
-            if (searchStr.includes(k))
-                score += this.config.keywords[k]
-        this.setIterationValue('score', score + weight, node, iteration)
-        return true
+            .slice(0, topN || nodes.length)
     }
 
 	extractReadableText(node = this.element, iteration = this.iterator) {
         let text = ''
         const topNodes = this.getReadableContainers(1, node)
         if (topNodes)
-            for (const [textContent, _] of this.populateTextNodes(topNodes[0], iteration))
-                text += textContent
+            for (const n of this.getTextNodes(topNodes[0], iteration))
+                text += n.textContent
         return text
     }
 
-    populateTextNodes(node = this.element, iteration = this.iterator, list = null) {
-        let child = node.firstChild
+    *getTextNodes(node = this.element, iteration = this.iterator, blockWrapper = document.createTextNode('\n')) {
         let isBlock = false
-        list ??= []
 
-        while (child) {
+        for (let child = node.firstChild; child; child = child.nextSibling) {
             if (child.nodeType == Node.TEXT_NODE) {
-                list.push([child.textContent, child])
+                yield child
                 isBlock = false
             } else if (child.nodeType == Node.ELEMENT_NODE
                 && !this.isIgnored(child, iteration)
                 && !this.isHidden(child)
             ) {
                 const lastBlock = isBlock
-                isBlock = this.#isBlockElement(child)
+                isBlock = blockWrapper && this.isBlockElement(child)
                 if (isBlock && !lastBlock)
-                    list.push(['\n', null])
-                this.populateTextNodes(child, iteration, list)
+                    yield blockWrapper
+                yield* this.getTextNodes(child, iteration)
                 if (isBlock)
-                    list.push(['\n', null])
+                    yield blockWrapper
             }
-            child = child.nextSibling
         }
-        return list
     }
 
-    getNodeTextLength(node = this.element, iteration = this.iterator) {
-        let len = this.getIterationValue('textlength', node, iteration) || 0
-        if (len) return len
-        let child = node.firstChild
+    calculateTextFill(selector, node = this.element, iteration = this.iterator) {
+        const textLength = this.getTextLength(node, iteration)
 
-        while (child) {
-            if (child.nodeType == Node.TEXT_NODE) {
-                len += child.textContent.trim().length
-            } else if (child.nodeType == Node.ELEMENT_NODE
-                && !this.isIgnored(child, iteration)
-                && !this.isHidden(child)
-            ) {
-                len += this.getNodeTextLength(child, iteration)
-            }
-            child = child.nextSibling
+        let selectedTextLength = 0
+        for (const n of node.querySelectorAll(selector))
+            if (!n.closest(selector) && !this.isIgnored(n, iteration) && !this.isHidden(n))
+                selectedTextLength += this.getTextLength(n, iteration)
+        
+        return {
+            selectedTextLength,
+            unselectedTextLength: textLength - selectedTextLength,
+            textLengthRatio: textLength ? selectedTextLength / textLength : 0,
         }
-        this.setIterationValue('textlength', len, node, iteration)
+    }
+
+    getTextLength(node = this.element, iteration = this.iterator) {
+        let len = this.getIterationValue('textlength', node, iteration) || 0
+        if (!len) {
+            for (let child = node.firstChild; child; child = child.nextSibling) {
+                if (child.nodeType == Node.TEXT_NODE) {
+                    len += child.textContent.trim().length
+                } else if (child.nodeType == Node.ELEMENT_NODE
+                    && !this.isIgnored(child, iteration)
+                    && !this.isHidden(child)
+                ) {
+                    len += this.getTextLength(child, iteration)
+                }
+            }
+            this.setIterationValue('textlength', len, node, iteration)
+        }
         return len
     }
 
@@ -283,10 +265,6 @@ class Escrape {
         this.setIterationValue('ignored', ignore, node, iteration)
         this.setIterationValue('textlength', ignore ? 0 : undefined, node, iteration)
     }
-
-    // collapseWhitespace(str) {
-    //     return str.replace(/\s+/g, ' ')
-    // }
 
     getIterationValue(property, node = this.element, iteration = this.iterator) {
         if (node._escrape && node._escrape[iteration])
@@ -303,9 +281,26 @@ class Escrape {
         return !node.offsetWidth && !node.getClientRects()
     }
 
-    #isBlockElement(node = this.element) {
+    isBlockElement(node = this.element) {
         const display = node.style.display.toLowerCase()
-        return this.config.selectors.blockDisplayStyles.includes(display)
-            || this.config.selectors.blockTags.includes(node.tagName.toLowerCase())
+        if (display)
+            return this.config.selectors.blockDisplayStyles.includes(display)
+        return this.config.selectors.blockTags.includes(node.tagName.toLowerCase())
+    }
+
+    #score(weight, node = this.element, iteration = this.iterator) {
+        let score = this.getIterationValue('score', node, iteration)
+        if (score != null) {
+            this.setIterationValue('score', score + weight, node, iteration)
+            return false
+        }
+        const tagName = node.tagName.toLowerCase()
+        const searchStr =`.${node.className.toLowerCase()} #${node.id.toLowerCase()} +${tagName} `
+        score = 0
+        for (const k in this.config.keywords)
+            if (searchStr.includes(k))
+                score += this.config.keywords[k]
+        this.setIterationValue('score', score + weight, node, iteration)
+        return true
     }
 }
