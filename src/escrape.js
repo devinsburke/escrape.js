@@ -95,36 +95,36 @@ class Escrape {
         this.config = {...defaultConfig, ...config}
     }
 
-	getPageDescription() {
-		const metas = this.element.querySelectorAll('meta[description],meta[name=description],meta[property=og\\:description]')
-		for (const meta of metas) {
-			if (meta.description)
-				return meta.description
-			if (meta.content)
-				return meta.content
-		}
-		const shortDescription = this.element.querySelectorAll('.shortdescription')
-		if (shortDescription.length == 1)
-			return shortDescription[0].innerText
+    getPageDescription() {
+        const metas = this.element.querySelectorAll('meta[description],meta[name=description],meta[property=og\\:description]')
+        for (const meta of metas) {
+            if (meta.description)
+                return meta.description
+            if (meta.content)
+                return meta.content
+        }
+        const shortDescription = this.element.querySelectorAll('.shortdescription')
+        if (shortDescription.length == 1)
+            return shortDescription[0].innerText
 
-		return ''
-	}
-
-	getPageTitle(document) {
-		const h1s = this.element.querySelectorAll('h1')
-		if (h1s.length == 1)
-			return h1s[0].textContent // TODO: Convert to method?
-		return document.title.split(/( - | \| )/)[0].trim()
+        return ''
     }
 
-    isSelectorContainer(selector, node = this.element, iteration = this.iterator) {
+    getPageTitle(document) {
+        const h1s = this.element.querySelectorAll('h1')
+        if (h1s.length == 1)
+            return h1s[0].textContent
+        return document.title.split(/( - | \| )/)[0].trim()
+    }
+
+    isContainerOf(selector, node = this.element, iteration = this.iterator) {
         if (this.getTextLength(node, iteration) >= this.config.minimumTextLengthPerNode) {
             const fill = this.calculateTextFill(selector, node, iteration)
             return fill.textLengthRatio > this.config.minimumTextLengthRatioPerContainer
         }
     }
 
-    *getSelectorContainers(selector, title = '', node = this.element, iteration = this.iterator) {
+    *getContainersOf(selector, title = '', node = this.element, iteration = this.iterator) {
         const nodes = [...node.querySelectorAll(selector)]
         const property = `${title}Container`
 
@@ -135,7 +135,7 @@ class Escrape {
 
             const parent = currentNode.parentNode
             if (parent && this.getIterationValue(property, parent, iteration) == null) {
-                const isContainer = this.isSelectorContainer(selector, parent, iteration) != false
+                const isContainer = this.isContainerOf(selector, parent, iteration) != false
                 this.setIterationValue(property, isContainer, parent, iteration)
                 if (isContainer)
                     nodes.push(parent)
@@ -153,53 +153,36 @@ class Escrape {
         }
     }
 
-    getReadableContainer(node = this.element) {
-        const top = this.getReadableContainers(1, node)
-        return top && top[0]
-    }
-
-    getReadableContainers(topN = null, node = this.element, iteration = this.iterator) {
-        const visualSelector = this.config.selectors.descriptiveTags.join(',')
-            + ',' + this.config.selectors.interactiveTags.join(',')
-            + ',[role=' + this.config.selectors.interactiveRoles.join('],[role=') + ']'
-
-        for (const e of node.querySelectorAll(this.config.selectors.metaTags))
-            this.ignore(e, iteration)
-        for (const e of node.querySelectorAll('.' + this.config.selectors.asideClasses.join(',.')))
-            this.ignore(e, iteration)
-        for (const e of this.getSelectorContainers(visualSelector, 'visual', node, iteration))
-            this.ignore(e, iteration)
-        for (const e of this.getHyperlinkContainers(node, iteration))
-            this.ignore(e, iteration)
-        
-        const nodes = []
+    getReadableContainer(node = this.element, iteration = this.iterator) {
+        let nodes = []
         const readableSelector = this.config.selectors.readableTags.join(',')
         for (const n of node.querySelectorAll(readableSelector)) {
             let weight = Math.min(this.getTextLength(n, iteration) / 100, 5)
             let i = this.config.textContainerTraversalDepth
             let p = n.parentNode
-
+            
             while (p.parentNode && --i) {
                 if (this.#score(weight, p, iteration))
-                nodes.push(p)
+                    nodes.push(p)
                 weight /= 2
                 p = p.parentNode
             }
         }
 
-        return nodes
-            .filter(n => this.getIterationValue('score', n, iteration) > 0)
-            .sort((a,b) => this.getIterationValue('score', b, iteration) - this.getIterationValue('score', a, iteration))
-            .slice(0, topN || nodes.length)
+        nodes = nodes.filter(n => this.getIterationValue('score', n, iteration) > 0)
+        nodes = nodes.sort((a,b) => this.getIterationValue('score', b, iteration) - this.getIterationValue('score', a, iteration))
+        return nodes ? nodes[0] : null
     }
 
-	extractReadableText(node = this.element, iteration = this.iterator) {
+    extractReadableText(node = this.element, iteration = this.iterator) {
         let text = ''
-        const topNodes = this.getReadableContainers(1, node)
-        if (topNodes)
-            for (const n of this.getTextNodes(topNodes[0], iteration))
+        const readableNode = this.getReadableContainer(node, iteration)
+        if (readableNode)
+            for (const n of this.getTextNodes(readableNode, iteration))
                 text += n.textContent
-        return text
+                    .replace(/[\r\n]+/g, '\n')
+                    .replace(/[\t ]+/g, ' ')
+        return text.trim()
     }
 
     *getTextNodes(node = this.element, iteration = this.iterator, blockWrapper = document.createTextNode('\n')) {
@@ -223,7 +206,25 @@ class Escrape {
             }
         }
     }
-
+    
+    getTextLength(node = this.element, iteration = this.iterator) {
+        let len = this.getIterationValue('textlength', node, iteration) || 0
+        if (!len) {
+            for (let child = node.firstChild; child; child = child.nextSibling) {
+                if (child.nodeType == Node.TEXT_NODE) {
+                    len += child.textContent.replace(/\s+/g, ' ').trim().length
+                } else if (child.nodeType == Node.ELEMENT_NODE
+                    && !this.isIgnored(child, iteration)
+                    && !this.isHidden(child)
+                ) {
+                    len += this.getTextLength(child, iteration)
+                }
+            }
+            this.setIterationValue('textlength', len, node, iteration)
+        }
+        return len
+    }
+    
     calculateTextFill(selector, node = this.element, iteration = this.iterator) {
         const textLength = this.getTextLength(node, iteration)
 
@@ -239,31 +240,38 @@ class Escrape {
         }
     }
 
-    getTextLength(node = this.element, iteration = this.iterator) {
-        let len = this.getIterationValue('textlength', node, iteration) || 0
-        if (!len) {
-            for (let child = node.firstChild; child; child = child.nextSibling) {
-                if (child.nodeType == Node.TEXT_NODE) {
-                    len += child.textContent.trim().length
-                } else if (child.nodeType == Node.ELEMENT_NODE
-                    && !this.isIgnored(child, iteration)
-                    && !this.isHidden(child)
-                ) {
-                    len += this.getTextLength(child, iteration)
-                }
-            }
-            this.setIterationValue('textlength', len, node, iteration)
-        }
-        return len
+    ignoreMetaElements(node = this.element, iteration = this.iterator) {
+        const selector = this.config.selectors.metaTags.join(',')
+        for (const e of node.querySelectorAll(selector))
+        this.ignore(e, iteration)
     }
 
-    isIgnored(node = this.element, iteration = this.iterator) {
-        return this.getIterationValue('ignored', node, iteration)
+    ignoreAsideElements(node = this.element, iteration = this.iterator) {
+        const selector = '.' + this.config.selectors.asideClasses.join(',.')
+        for (const e of node.querySelectorAll(selector))
+            this.ignore(e, iteration)
+    }
+
+    ignoreVisualElements(node = this.element, iteration = this.iterator) {
+        const selector = this.config.selectors.descriptiveTags.join(',')
+            + ',' + this.config.selectors.interactiveTags.join(',')
+            + ',[role=' + this.config.selectors.interactiveRoles.join('],[role=') + ']'
+        for (const e of this.getContainersOf(selector, 'visual', node, iteration))
+            this.ignore(e, iteration)
+    }
+
+    ignoreHyperlinkLists(node = this.element, iteration = this.iterator) {
+        for (const e of this.getHyperlinkContainers(node, iteration))
+            this.ignore(e, iteration)
     }
 
     ignore(node = this.element, iteration = this.iterator, ignore = true) {
         this.setIterationValue('ignored', ignore, node, iteration)
         this.setIterationValue('textlength', ignore ? 0 : undefined, node, iteration)
+    }
+
+    isIgnored(node = this.element, iteration = this.iterator) {
+        return this.getIterationValue('ignored', node, iteration)
     }
 
     getIterationValue(property, node = this.element, iteration = this.iterator) {
