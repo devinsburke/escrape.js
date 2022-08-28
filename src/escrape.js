@@ -4,7 +4,7 @@
 const defaultConfig = {
     /**
      * Dictionary of keywords and their respective scores, used for scoring whether an
-     * element contribute to the article body. In the `getArticleContainer` method, each
+     * element contribute to the article body. In the `findArticleContainer` method, each
      * keyword is sought in lowecase within the element's id, tag name, and/or classes.
      * 
      * Each keyword impacts the score at most once. For example, for a `span` with a class
@@ -107,7 +107,7 @@ const defaultConfig = {
     /** Minimum percentage (0-1) of text under an element that must be owned by a selector for the whole element to be considered a container of that selector. */
     containerRatioThreshold: 0.4,
     /** Minimum text length within an element to be considered textual. */
-    textLenthThreshold: 75,
+    textLengthThreshold: 75,
     /** Maximum level to traverse upward when propagating text-length scores to parents. */
     textContainerTraversalDepth: 4,
 }
@@ -185,61 +185,85 @@ class Escrape {
                 yield n
     }
 
-    /**
-     * Evaluates whether an element is a major container of descendents matching a selector.
-     * For example, use selector `'h1, h2'` to determine if the percentage of text coming
-     * from `h1`s and `h2`s or their descendents exceeds a threshold.
-     * Excludes text from hidden and ignored elements.
-     * @param {string} selector Css/query selector of elements that might, collectively, contain most text in the element.
-     * @param {HTMLElement} node Element to evaluate.
-     * @param {int} iteration Iteration number. See `nextIteration` method for explanation.
-     * @returns {boolean}
-     */
-    isContainerOf(selector, node = this.rootNode, iteration = this.iterator, ratioThreshold = this.config.containerRatioThreshold) {
-        return this.calculateTextFill(selector, node, iteration) > ratioThreshold
-    }
-
-    *getContainersOf(selector, title = '', node = this.rootNode, iteration = this.iterator) {
+    *selectContainersOf(selector, title = '', node = this.rootNode, iteration = this.iterator, ratioThreshold = this.config.containerRatioThreshold) {
         const nodes = [...this.select(selector, node, iteration)]
         const property = `${title}Container`
 
         let currentNode
         while (currentNode = nodes.shift()) {
-            this.setIterationValue(property, true, currentNode, iteration)
+            this.#set(property, true, currentNode, iteration)
             yield currentNode
 
             const parent = currentNode.parentNode
-            if (parent && this.getIterationValue(property, parent, iteration) == null) {
-                const isContainer = this.isContainerOf(selector, parent, iteration) != false
-                this.setIterationValue(property, isContainer, parent, iteration)
+            if (parent && this.#get(property, parent, iteration) == null) {
+                const isContainer = this.calculateTextFill(selector, node, iteration) > ratioThreshold
+                this.#set(property, isContainer, parent, iteration)
                 if (isContainer)
                     nodes.push(parent)
             }
         }
     }
 
-    *getHyperlinkContainers(node = this.rootNode, iteration = this.iterator, minimumHyperlinks = 3) {
-        for (const n of this.getContainersOf('a', 'link', node, iteration))
+    *selectHyperlinkContainers(node = this.rootNode, iteration = this.iterator, minimumHyperlinks = 3) {
+        for (const n of this.selectContainersOf('a', 'link', node, iteration))
             if (n.tagName.toLowerCase() != 'a') {
-                if (this.isBlockElement(n))
+                if (this.isBlock(n))
                     yield n
                 if (this.select('a', n, iteration).length >= minimumHyperlinks)
                     yield n
             }
     }
 
-    *getReadableElements(selector, node = this.rootNode, iteration = this.iterator) {
+    *selectReadableElements(selector, node = this.rootNode, iteration = this.iterator) {
         for (const n of this.select(selector, node, iteration))
             if (this.hasSignificantTextLength(n, iteration))
                 yield n
     }
 
-    getArticleContainer(node = this.rootNode, iteration = this.iterator) {
+    /**
+     * Retrieves a list of elements that provide basic page infrastructure, often
+     * located in the page's `head` (e.g.: `script`, `style`, `meta`).
+     * @param {HTMLElement} node Parent element under which to find meta elements.
+     * @returns NodeListOf<any> List of elements matching the `config.metaTags` selector.
+     */
+     selectMetaElements(node = this.rootNode) {
+        const selector = this.config.metaTags.join(',')
+        return node.querySelectorAll(selector)
+    }
+
+    /**
+     * Retrieves a list of elements that are typically noise, such as citations.
+     * @param {HTMLElement} node Parent element under which to find aside elements.
+     * @param {int} iteration Iteration number. See `nextIteration` method for explanation.
+     * @returns {NodeListOf<any>} List of elements matching the `config.asideClasses` selector.
+     */
+    selectAsideElements(node = this.rootNode, iteration = this.iterator) {
+        const selector = '.' + this.config.asideClasses.join(',.')
+            + ',[role=' + this.config.asideRoles.join('],[role=') + ']'
+        return this.select(selector, node, iteration)
+    }
+
+    /**
+     * Retrieves a list of containers of display-oriented elements that are descriptive
+     * (`h2`, `address`, etc.) or interactive (`button`, `menu`, etc.).
+     * See `selectContainersOf` for a better understanding of containers and thresholds. 
+     * @param {HTMLElement} node Parent element under which to find aside elements.
+     * @param {int} iteration Iteration number. See `nextIteration` method for explanation.
+     * @returns {Generator<HTMLElement>} List of elements matching the `descriptiveTags`, `interactiveTags`, and `asideRoles` selectors.
+     */
+    selectVisualContainers(node = this.rootNode, iteration = this.iterator) {
+        const selector = this.config.descriptiveTags.join(',')
+            + ',' + this.config.interactiveTags.join(',')
+
+        return this.selectContainersOf(selector, 'visual', node, iteration)
+    }
+    
+    findArticleContainer(node = this.rootNode, iteration = this.iterator) {
         let nodes = []
         const readableSelector = this.config.readableTags.join(',')
-        const selection = this.getReadableElements(readableSelector, node, iteration)
+        const selection = this.selectReadableElements(readableSelector, node, iteration)
         for (const n of selection) {
-            let weight = Math.min(this.getTextLength(n, iteration) / this.config.textLenthThreshold, 10) - 1
+            let weight = Math.min(this.calculateTextLength(n, iteration) / this.config.textLengthThreshold, 10) - 1
             let depth = this.config.textContainerTraversalDepth
             const decrement = weight / depth
             
@@ -255,7 +279,7 @@ class Escrape {
         let bestNode
         let bestScore = 0
         for (const n of nodes) {
-            const score = this.getIterationValue('score', n, iteration)
+            const score = this.#get('score', n, iteration)
             if (score > bestScore) {
                 bestNode = n
                 bestScore = score
@@ -278,7 +302,7 @@ class Escrape {
                 && !this.isHidden(child)
             ) {
                 const lastBlock = isBlock
-                isBlock = blockWrapper && this.isBlockElement(child)
+                isBlock = blockWrapper && this.isBlock(child)
                 if (isBlock && !lastBlock)
                     yield blockWrapper
                 yield* this.getTextNodes(child, iteration)
@@ -296,8 +320,8 @@ class Escrape {
      * @param {int} iteration Iteration number. See `nextIteration` method for explanation.
      * @returns {int} Character count of relevant text under this node.
      */
-    getTextLength(node = this.rootNode, iteration = this.iterator) {
-        let len = this.getIterationValue('textlength', node, iteration) || 0
+    calculateTextLength(node = this.rootNode, iteration = this.iterator) {
+        let len = this.#get('textlength', node, iteration) || 0
         if (!len) {
             for (let child = node.firstChild; child; child = child.nextSibling) {
                 if (child.nodeType == Node.TEXT_NODE) {
@@ -306,72 +330,34 @@ class Escrape {
                     && !this.isIgnored(child, iteration)
                     && !this.isHidden(child)
                 ) {
-                    len += this.getTextLength(child, iteration)
+                    len += this.calculateTextLength(child, iteration)
                 }
             }
-            this.setIterationValue('textlength', len, node, iteration)
+            this.#set('textlength', len, node, iteration)
         }
         return len
     }
     
     calculateTextFill(selector, node = this.rootNode, iteration = this.iterator) {
-        const textLength = this.getTextLength(node, iteration)
+        const textLength = this.calculateTextLength(node, iteration)
         if (textLength == 0)
             return 0
         let selectedTextLength = 0
         for (const n of this.select(selector, node, iteration))
             if ((!n.parentNode || !n.parentNode.closest(selector)))
-                selectedTextLength += this.getTextLength(n, iteration)
+                selectedTextLength += this.calculateTextLength(n, iteration)
         return selectedTextLength / textLength
     }
 
     extractArticleText(node = this.rootNode, iteration = this.iterator) {
         let text = ''
-        const articleNode = this.getArticleContainer(node, iteration)
+        const articleNode = this.findArticleContainer(node, iteration)
         if (articleNode)
             for (const n of this.getTextNodes(articleNode, iteration))
                 text += n._preserveWhitespace
                     ? n.textContent
                     : n.textContent.replace(/\s+/g, ' ')
         return text.trim()
-    }
-
-    /**
-     * Retrieves a list of elements that provide basic page infrastructure, often
-     * located in the page's `head` (e.g.: `script`, `style`, `meta`).
-     * @param {HTMLElement} node Parent element under which to find meta elements.
-     * @returns NodeListOf<any> List of elements matching the `config.metaTags` selector.
-     */
-    getMetaElements(node = this.rootNode) {
-        const selector = this.config.metaTags.join(',')
-        return node.querySelectorAll(selector)
-    }
-
-    /**
-     * Retrieves a list of elements that are typically noise, such as citations.
-     * @param {HTMLElement} node Parent element under which to find aside elements.
-     * @param {int} iteration Iteration number. See `nextIteration` method for explanation.
-     * @returns {NodeListOf<any>} List of elements matching the `config.asideClasses` selector.
-     */
-    getAsideElements(node = this.rootNode, iteration = this.iterator) {
-        const selector = '.' + this.config.asideClasses.join(',.')
-            + ',[role=' + this.config.asideRoles.join('],[role=') + ']'
-        return this.select(selector, node, iteration)
-    }
-
-    /**
-     * Retrieves a list of containers of display-oriented elements that are descriptive
-     * (`h2`, `address`, etc.) or interactive (`button`, `menu`, etc.).
-     * See `getContainersOf` for a better understanding of containers and thresholds. 
-     * @param {HTMLElement} node Parent element under which to find aside elements.
-     * @param {int} iteration Iteration number. See `nextIteration` method for explanation.
-     * @returns {Generator<HTMLElement>} List of elements matching the `descriptiveTags`, `interactiveTags`, and `asideRoles` selectors.
-     */
-    getVisualContainers(node = this.rootNode, iteration = this.iterator) {
-        const selector = this.config.descriptiveTags.join(',')
-            + ',' + this.config.interactiveTags.join(',')
-
-        return this.getContainersOf(selector, 'visual', node, iteration)
     }
 
     ignoreAll(iteration, ...nodeLists) {
@@ -382,10 +368,8 @@ class Escrape {
 
     ignore(node = this.rootNode, iteration = this.iterator, ignore = true) {
         if (!this.isIgnored(node, iteration)) {
-            node.style.outline = 'red 1px solid'
-
-            this.setIterationValue('ignored', ignore, node, iteration)
-            this.setIterationValue('textlength', ignore ? 0 : undefined, node, iteration)
+            this.#set('ignored', ignore, node, iteration)
+            this.#set('textlength', ignore ? 0 : undefined, node, iteration)
 
             for (const n of node.children)
                 this.ignore(n, iteration)
@@ -393,11 +377,11 @@ class Escrape {
     }
 
     isIgnored(node = this.rootNode, iteration = this.iterator) {
-        return this.getIterationValue('ignored', node, iteration)
+        return this.#get('ignored', node, iteration)
     }
 
-    hasSignificantTextLength(node = this.rootNode, iteration = this.iterator, textLengthThreshold = this.config.textLenthThreshold) {
-        return this.getTextLength(node, iteration) >= textLengthThreshold
+    hasSignificantTextLength(node = this.rootNode, iteration = this.iterator) {
+        return this.calculateTextLength(node, iteration) >= this.config.textLengthThreshold
     }
 
     /**
@@ -423,7 +407,7 @@ class Escrape {
      * @param {HTMLElement} node Element to assess. 
      * @returns {boolean} Boolean indicating if the node is probably block-style.
      */
-    isBlockElement(node = this.rootNode) {
+    isBlock(node = this.rootNode) {
         const display = node.style.display
         if (display && this.config.blockDisplayStyles.includes(display.toLowerCase()))
             return true
@@ -433,12 +417,12 @@ class Escrape {
         return this.config.blockTags.includes(node.tagName.toLowerCase())
     }
 
-    getIterationValue(property, node = this.rootNode, iteration = this.iterator) {
+    #get(property, node = this.rootNode, iteration = this.iterator) {
         if (node._escrape && node._escrape[iteration])
             return node._escrape[iteration][property]
     }
 
-    setIterationValue(property, value, node = this.rootNode, iteration = this.iterator) {
+    #set(property, value, node = this.rootNode, iteration = this.iterator) {
         node._escrape ??= {}
         node._escrape[iteration] ??= {}
         node._escrape[iteration][property] = value        
@@ -453,9 +437,9 @@ class Escrape {
      * @returns {boolean} `True` if calculating the initial score; `False` if updating the cached score.
      */
     #score(weight, node = this.rootNode, iteration = this.iterator, keywords = this.config.keywords) {
-        const currentScore = this.getIterationValue('score', node, iteration)        
+        const currentScore = this.#get('score', node, iteration)        
         if (currentScore != null) {
-            this.setIterationValue('score', currentScore + weight, node, iteration)
+            this.#set('score', currentScore + weight, node, iteration)
             return false
         }
         const tagName = node.tagName.toLowerCase()
@@ -470,7 +454,7 @@ class Escrape {
                 else if (val < lowest)
                     lowest = val
             }
-        this.setIterationValue('score', highest + lowest + weight, node, iteration)
+        this.#set('score', highest + lowest + weight, node, iteration)
         return true
     }
 }
