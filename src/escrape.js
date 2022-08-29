@@ -1,125 +1,125 @@
-/**
- * Default configuration object for Escrape instances.
- */
-const defaultConfig = {
-    /**
-     * Dictionary of keywords and their respective scores, used for scoring whether an
-     * element contribute to the article body. In the `findArticleContainer` method, each
-     * keyword is sought in lowecase within the element's id, tag name, and/or classes.
-     * 
-     * Each keyword impacts the score at most once. For example, for a `span` with a class
-     * of `timespan`, the keyword entry `{span:5}` would increase its score by by 5, not 10. However, multiple keywords can match the
-     * However, entries `{span:10, time:5}` would increase its score by 15 because multiple
-     * keywords can match the same element.
-     * 
-     * Use `.class`, `#id`, or `+tag` syntaxes to target specific attributes. To
-     * match exact text, use a targeted prefix and a space suffix (e.g., `+i ` to target
-     * the `i` tag without also matching `img`.)
-     */
-    keywords: {
-        '+div ': 5,
-        '+pre ': 5,
-        '+section ': 5,
-        '+p ': 10,
-        'article': 25,
-        'body': 25,
-        'content': 25,
-        'entry': 25,
-        'hentry': 25,
-        'main': 25,
-        'page': 25,
-        'post': 25,
-        'text': 25,
-        'blog': 25,
-        'story': 25,
-        'column': 25,
-        '+dl ': -5,
-        '+dt ': -5,
-        '+dd ': -5,
-        '+li ': -5,
-        '+ol ': -5,
-        '+td ': -5,
-        '+ul ': -5,
-        '.grid': -25,
-        'attribution': -25,
-        'blocks': -25,
-        'combx': -25,
-        'comment': -25,
-        'contact': -25,
-        'reference': -25,
-        'foot': -25,
-        'footer': -25,
-        'footnote': -25,
-        'infobox': -25,
-        'masonry': -25,
-        'masthead': -25,
-        'media': -25,
-        'meta': -25,
-        'outbrain': -25,
-        'promo': -25,
-        'related': -25,
-        'scroll': -25,
-        'shoutbox': -25,
-        'sidebar': -25,
-        'sponsor': -25,
-        'shopping': -25,
-        'tags': -25,
-        'tool': -25,
-        'widget': -25,
-        'community': -25,
-        'disqus': -25,
-        'extra': -25,
-        'header': -25,
-        'menu': -25,
-        'remark': -25,
-        'rss': -25,
-        'shoutbox': -25,
-        'sidebar': -25,
-        'sponsor': -25,
-        'ad-break': -25,
-        'pagination': -25,
-        'pager': -25,
-        'popup': -25,
-        'tweet': -25,
-        'twitter': -25,
-        'viewcode': -25,
-    },
-    /** List of 'display' style values that indicate the element should be treated as a block element (e.g.: block, inline-block). */
-    blockDisplayStyles: ['block', 'flex', 'grid', 'inline-block', 'inline-flex'],
-    /** List of 'position' style values that indicate the element should be treated as a block element (e.g.: absolute). */
-    blockPositionStyles: ['absolute', 'fixed', 'sticky'],
-    /** List of html tags that display as a block element by default (e.g.: div, h1). */
-    blockTags: ['address', 'article', 'aside', 'blockquote', 'br', 'canvas', 'dd', 'div', 'fieldset', 'figcaption', 'figure', 'footer', 'form', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'header', 'hr', 'li', 'main', 'nav', 'noscript', 'ol', 'p', 'pre', 'section', 'table', 'td', 'th', 'tr', 'thead', 'tfoot', 'ul', 'video'],
-    /** List of html tags that are often direct containers of text (e.g.: p, article). */
-    readableTags: ['p', 'pre', 'span', 'td'],
-    /** List of html tags constituting section headers (e.g.: h1, h2) */
-    headingTags: ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'],
-    /** List of html tags that serve as non-display page infrastructure (e.g.: script, style, meta). */
-    metaTags: ['head', 'link', 'meta', 'noscript', 'script', 'style'],
-    /** List of html tags that do contain text but are often purely for annotations (e.g.: label, address). */
-    descriptiveTags: ['address', 'blockquote', 'cite', 'figcaption', 'footer', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'header', 'output', 'pre', 'sup', 'tfoot'],
-    /** List of html tags for interactive, non-readable elements (e.g.: button, img, menu). */
-    interactiveTags: ['button', 'canvas', 'dialog', 'embed', 'figure', 'form', 'frame', 'iframe', 'img', 'input', 'label', 'menu', 'menuitem', 'nav', 'object', 'select', 'svg', 'textarea', 'video'],
-    /** List of html element roles for non-article, interactive elements (e.g.: alert, banner, tooltip). */
-    asideRoles: ['alert', 'alertdialog', 'banner', 'button', 'columnheader', 'combobox', 'complementary', 'dialog', 'directory', 'figure', 'heading', 'img', 'listbox', 'marquee', 'math', 'menu', 'menubar', 'menuitem', 'navigation', 'option', 'search', 'searchbox', 'status', 'toolbar', 'tooltip'],
-    /** List of css classes of typical elements like div or span that xxx. */
-    asideClasses: ['blogroll', 'caption', 'citation', 'comment', 'community', 'contact', 'copyright', 'extra', 'foot', 'footer', 'footnote', 'hide-print', 'infobox', 'masthead', 'media', 'meta', 'metadata', 'mw-jump-link', 'mw-revision', 'navigation', 'navigation-not-searchable', 'noprint', 'outbrain', 'pager', 'popup', 'promo', 'reference', 'reference-text', 'references', 'related', 'related-articles', 'remark', 'rss', 's-popover', 'scroll', 'shopping', 'shoutbox', 'sidebar', 'sponsor', 'tag-cloud', 'tags', 'thumb', 'tool', 'user-info', 'widget', 'wikitable'],
-    /** Minimum percentage (0-1) of text under an element that must be owned by a selector for the whole element to be considered a container of that selector. */
-    containerRatioThreshold: 0.4,
-    /** Minimum text length within an element to be considered textual. */
-    textLengthThreshold: 75,
-    /** Maximum level to traverse upward when propagating text-length scores to parents. */
-    textContainerTraversalDepth: 4,
-}
-
 class Escrape {
+    /**
+     * Default configuration object for Escrape instances.
+     */
+    static defaultConfig = {
+        /**
+         * Dictionary of keywords and their respective scores, used for scoring whether an
+         * element contribute to the article body. In the `findArticleContainer` method, each
+         * keyword is sought in lowecase within the element's id, tag name, and/or classes.
+         * 
+         * Each keyword impacts the score at most once. For example, for a `span` with a class
+         * of `timespan`, the keyword entry `{span:5}` would increase its score by by 5, not 10. However, multiple keywords can match the
+         * However, entries `{span:10, time:5}` would increase its score by 15 because multiple
+         * keywords can match the same element.
+         * 
+         * Use `.class`, `#id`, or `+tag` syntaxes to target specific attributes. To
+         * match exact text, use a targeted prefix and a space suffix (e.g., `+i ` to target
+         * the `i` tag without also matching `img`.)
+         */
+        keywords: {
+            '+div ': 5,
+            '+pre ': 5,
+            '+section ': 5,
+            '+p ': 10,
+            'article': 25,
+            'body': 25,
+            'content': 25,
+            'entry': 25,
+            'hentry': 25,
+            'main': 25,
+            'page': 25,
+            'post': 25,
+            'text': 25,
+            'blog': 25,
+            'story': 25,
+            'column': 25,
+            '+dl ': -5,
+            '+dt ': -5,
+            '+dd ': -5,
+            '+li ': -5,
+            '+ol ': -5,
+            '+td ': -5,
+            '+ul ': -5,
+            '.grid': -25,
+            'attribution': -25,
+            'blocks': -25,
+            'combx': -25,
+            'comment': -25,
+            'contact': -25,
+            'reference': -25,
+            'foot': -25,
+            'footer': -25,
+            'footnote': -25,
+            'infobox': -25,
+            'masonry': -25,
+            'masthead': -25,
+            'media': -25,
+            'meta': -25,
+            'outbrain': -25,
+            'promo': -25,
+            'related': -25,
+            'scroll': -25,
+            'shoutbox': -25,
+            'sidebar': -25,
+            'sponsor': -25,
+            'shopping': -25,
+            'tags': -25,
+            'tool': -25,
+            'widget': -25,
+            'community': -25,
+            'disqus': -25,
+            'extra': -25,
+            'header': -25,
+            'menu': -25,
+            'remark': -25,
+            'rss': -25,
+            'shoutbox': -25,
+            'sidebar': -25,
+            'sponsor': -25,
+            'ad-break': -25,
+            'pagination': -25,
+            'pager': -25,
+            'popup': -25,
+            'tweet': -25,
+            'twitter': -25,
+            'viewcode': -25,
+        },
+        /** List of 'display' style values that indicate the element should be treated as a block element (e.g.: block, inline-block). */
+        blockDisplayStyles: ['block', 'flex', 'grid', 'inline-block', 'inline-flex'],
+        /** List of 'position' style values that indicate the element should be treated as a block element (e.g.: absolute). */
+        blockPositionStyles: ['absolute', 'fixed', 'sticky'],
+        /** List of html tags that display as a block element by default (e.g.: div, h1). */
+        blockTags: ['address', 'article', 'aside', 'blockquote', 'br', 'canvas', 'dd', 'div', 'fieldset', 'figcaption', 'figure', 'footer', 'form', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'header', 'hr', 'li', 'main', 'nav', 'noscript', 'ol', 'p', 'pre', 'section', 'table', 'td', 'th', 'tr', 'thead', 'tfoot', 'ul', 'video'],
+        /** List of html tags that are often direct containers of text (e.g.: p, article). */
+        readableTags: ['p', 'pre', 'span', 'td'],
+        /** List of html tags constituting section headers (e.g.: h1, h2) */
+        headingTags: ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'],
+        /** List of html tags that serve as non-display page infrastructure (e.g.: script, style, meta). */
+        metaTags: ['head', 'link', 'meta', 'noscript', 'script', 'style'],
+        /** List of html tags that do contain text but are often purely for annotations (e.g.: label, address). */
+        descriptiveTags: ['address', 'blockquote', 'cite', 'figcaption', 'footer', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'header', 'output', 'pre', 'sup', 'tfoot'],
+        /** List of html tags for interactive, non-readable elements (e.g.: button, img, menu). */
+        interactiveTags: ['button', 'canvas', 'dialog', 'embed', 'figure', 'form', 'frame', 'iframe', 'img', 'input', 'label', 'menu', 'menuitem', 'nav', 'object', 'select', 'svg', 'textarea', 'video'],
+        /** List of html element roles for non-article, interactive elements (e.g.: alert, banner, tooltip). */
+        asideRoles: ['alert', 'alertdialog', 'banner', 'button', 'columnheader', 'combobox', 'complementary', 'dialog', 'directory', 'figure', 'heading', 'img', 'listbox', 'marquee', 'math', 'menu', 'menubar', 'menuitem', 'navigation', 'option', 'search', 'searchbox', 'status', 'toolbar', 'tooltip'],
+        /** List of css classes of typical elements like div or span that xxx. */
+        asideClasses: ['blogroll', 'caption', 'citation', 'comment', 'community', 'contact', 'copyright', 'extra', 'foot', 'footer', 'footnote', 'hide-print', 'infobox', 'masthead', 'media', 'meta', 'metadata', 'mw-jump-link', 'mw-revision', 'navigation', 'navigation-not-searchable', 'noprint', 'outbrain', 'pager', 'popup', 'promo', 'reference', 'reference-text', 'references', 'related', 'related-articles', 'remark', 'rss', 's-popover', 'scroll', 'shopping', 'shoutbox', 'sidebar', 'sponsor', 'tag-cloud', 'tags', 'thumb', 'tool', 'user-info', 'widget', 'wikitable'],
+        /** Minimum percentage (0-1) of text under an element that must be owned by a selector for the whole element to be considered a container of that selector. */
+        containerRatioThreshold: 0.4,
+        /** Minimum text length within an element to be considered textual. */
+        textLengthThreshold: 75,
+        /** Maximum level to traverse upward when propagating text-length scores to parents. */
+        textContainerTraversalDepth: 4,
+    }
+
     /**
      * Constructs a new Escrape instance. No processing occurs during construction, so
      * you may create new instances cheaply.
      * @param {object} config Configuration object. See documentation on `defaultConfig` and `setConfig`.
      * @param {HTMLElement} element Root element that will be scraped. Typically document.body.
      */
-    constructor(config = defaultConfig, element = document.body) {
+    constructor(config = Escrape.defaultConfig, element = document.body) {
         this.setConfig(config)
         this.rootNode = element
         this.iterator = 0
@@ -133,9 +133,9 @@ class Escrape {
      * @param {*} config Full or partial configuration object
      */
     setConfig(config) {
-        this.config = {...defaultConfig, ...config}
+        this.config = {...Escrape.defaultConfig, ...config}
     }
-
+    
     /**
      * xxx
      * @returns {int} Incremented iteration number.
