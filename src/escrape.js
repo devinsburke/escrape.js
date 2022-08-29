@@ -1,3 +1,5 @@
+export {Escrape}
+
 class Escrape {
     /**
      * Default configuration object for Escrape instances.
@@ -17,7 +19,7 @@ class Escrape {
          * match exact text, use a targeted prefix and a space suffix (e.g., `+i ` to target
          * the `i` tag without also matching `img`.)
          */
-        keywords: {
+        selectorKeywordScores: {
             '+div ': 5,
             '+pre ': 5,
             '+section ': 5,
@@ -91,15 +93,15 @@ class Escrape {
         blockPositionStyles: ['absolute', 'fixed', 'sticky'],
         /** List of html tags that display as a block element by default (e.g.: div, h1). */
         blockTags: ['address', 'article', 'aside', 'blockquote', 'br', 'canvas', 'dd', 'div', 'fieldset', 'figcaption', 'figure', 'footer', 'form', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'header', 'hr', 'li', 'main', 'nav', 'noscript', 'ol', 'p', 'pre', 'section', 'table', 'td', 'th', 'tr', 'thead', 'tfoot', 'ul', 'video'],
-        /** List of html tags that are often direct containers of text (e.g.: p, article). */
-        readableTags: ['p', 'pre', 'span', 'td'],
+        /** List of html tags that are often direct containers of prose (e.g.: p, span). */
+        proseTags: ['p', 'pre', 'span', 'td'],
         /** List of html tags constituting section headers (e.g.: h1, h2) */
         headingTags: ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'],
-        /** List of html tags that serve as non-display page infrastructure (e.g.: script, style, meta). */
-        metaTags: ['head', 'link', 'meta', 'noscript', 'script', 'style'],
+        /** List of html tags that serve as non-display page infrastructure (e.g.: `script`, `style`, `meta`). */
+        abstractTags: ['head', 'link', 'meta', 'noscript', 'script', 'style'],
         /** List of html tags that do contain text but are often purely for annotations (e.g.: label, address). */
-        descriptiveTags: ['address', 'blockquote', 'cite', 'figcaption', 'footer', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'header', 'output', 'pre', 'sup', 'tfoot'],
-        /** List of html tags for interactive, non-readable elements (e.g.: button, img, menu). */
+        descriptiveTags: ['address', 'blockquote', 'cite', 'figcaption', 'footer', 'header', 'output', 'pre', 'sup', 'tfoot'],
+        /** List of html tags for interactive, non-prose elements (e.g.: button, img, menu). */
         interactiveTags: ['button', 'canvas', 'dialog', 'embed', 'figure', 'form', 'frame', 'iframe', 'img', 'input', 'label', 'menu', 'menuitem', 'nav', 'object', 'select', 'svg', 'textarea', 'video'],
         /** List of html element roles for non-article, interactive elements (e.g.: alert, banner, tooltip). */
         asideRoles: ['alert', 'alertdialog', 'banner', 'button', 'columnheader', 'combobox', 'complementary', 'dialog', 'directory', 'figure', 'heading', 'img', 'listbox', 'marquee', 'math', 'menu', 'menubar', 'menuitem', 'navigation', 'option', 'search', 'searchbox', 'status', 'toolbar', 'tooltip'],
@@ -126,11 +128,11 @@ class Escrape {
     }
 
     /**
-     * Updates the configuration object with the config provided. If only a partial
-     * object is supplied, then only those settings will be updated and any missing
-     * settings will either stay their current value or, if unset, use the default
-     * Escrape configuration for that setting.
-     * @param {*} config Full or partial configuration object
+     * Updates the configuration object with the config provided. If only a partial object
+     * is supplied, then only those settings will be updated and any missing settings will
+     * either stay their current value or, if unset, use the default Escrape configuration
+     * for that setting.
+     * @param {object} config Full or partial configuration object
      */
     setConfig(config) {
         this.config = {...Escrape.defaultConfig, ...config}
@@ -145,8 +147,8 @@ class Escrape {
     }
 
     /**
-     * Retrieves the host-provided description of the page based on meta tags or, if
-     * meta tags are absent, common description elements.
+     * Retrieves the host-provided description of the page based on `meta` tags or, if
+     * `meta` tags are absent, common description elements.
      * @param {HTMLElement} The root DOM node to search for the page description. 
      * @returns {string} A string containing the page description if available.
      */
@@ -166,8 +168,8 @@ class Escrape {
     }
 
     /**
-     * Retrieves the host-provided title of the page based on the H1 tag or, if there
-     * is not precisely one h1, the title tag.
+     * Retrieves the host-provided title of the page based on the H1 tag or, if there is
+     * not precisely one h1, the title tag.
      * @param {HTMLElement} The root DOM node to search for the page title.
      * @returns {string} A string containing the page title if available.
      */
@@ -214,20 +216,20 @@ class Escrape {
             }
     }
 
-    *selectReadableElements(selector, node = this.rootNode, iteration = this.iterator) {
+    *selectProseElements(selector, node = this.rootNode, iteration = this.iterator) {
         for (const n of this.select(selector, node, iteration))
             if (this.hasSignificantTextLength(n, iteration))
                 yield n
     }
 
     /**
-     * Retrieves a list of elements that provide basic page infrastructure, often
-     * located in the page's `head` (e.g.: `script`, `style`, `meta`).
-     * @param {HTMLElement} node Parent element under which to find meta elements.
-     * @returns NodeListOf<any> List of elements matching the `config.metaTags` selector.
+     * Retrieves a list of elements that provide basic page infrastructure, often located
+     * in the page's `head` (e.g.: `script`, `style`, `meta`).
+     * @param {HTMLElement} node Parent element under which to find abstract elements.
+     * @returns NodeListOf<any> List of elements matching the `config.abstractTags` selector.
      */
-     selectMetaElements(node = this.rootNode) {
-        const selector = this.config.metaTags.join(',')
+    selectAbstractElements(node = this.rootNode) {
+        const selector = this.config.abstractTags.join(',')
         return node.querySelectorAll(selector)
     }
 
@@ -235,7 +237,7 @@ class Escrape {
      * Retrieves a list of elements that are typically noise, such as citations.
      * @param {HTMLElement} node Parent element under which to find aside elements.
      * @param {int} iteration Iteration number. See `nextIteration` method for explanation.
-     * @returns {NodeListOf<any>} List of elements matching the `config.asideClasses` selector.
+     * @returns {NodeListOf<any>} List of elements matching the `config.asideClasses` and `config.absideRoles` selectors.
      */
     selectAsideElements(node = this.rootNode, iteration = this.iterator) {
         const selector = '.' + this.config.asideClasses.join(',.')
@@ -249,19 +251,20 @@ class Escrape {
      * See `selectContainersOf` for a better understanding of containers and thresholds. 
      * @param {HTMLElement} node Parent element under which to find aside elements.
      * @param {int} iteration Iteration number. See `nextIteration` method for explanation.
-     * @returns {Generator<HTMLElement>} List of elements matching the `descriptiveTags`, `interactiveTags`, and `asideRoles` selectors.
+     * @returns {Generator<HTMLElement>} List of elements matching the `config.descriptiveTags`, `config.headingTags`, and `config.interactiveTags` selectors.
      */
     selectVisualContainers(node = this.rootNode, iteration = this.iterator) {
         const selector = this.config.descriptiveTags.join(',')
             + ',' + this.config.interactiveTags.join(',')
+            + ',' + this.config.headingTags.join(',')
 
         return this.selectContainersOf(selector, 'visual', node, iteration)
     }
     
     findArticleContainer(node = this.rootNode, iteration = this.iterator) {
         let nodes = []
-        const readableSelector = this.config.readableTags.join(',')
-        const selection = this.selectReadableElements(readableSelector, node, iteration)
+        const proseSelector = this.config.proseTags.join(',')
+        const selection = this.selectProseElements(proseSelector, node, iteration)
         for (const n of selection) {
             let weight = Math.min(this.calculateTextLength(n, iteration) / this.config.textLengthThreshold, 10) - 1
             let depth = this.config.textContainerTraversalDepth
@@ -313,9 +316,8 @@ class Escrape {
     }
 
     /**
-     * Returns the character count of the provided element and all its descendants,
-     * excluding any hidden elements or elements marked as ignored. Text length is
-     * cached at each level of the downstream hierarchy for the provided iteration.
+     * Returns the text length of an element and all its descendants, excluding hidden and
+     * ignored elements. Text length is cached on each downstream element.
      * @param {HTMLElement} node Element to evaluate.
      * @param {int} iteration Iteration number. See `nextIteration` method for explanation.
      * @returns {int} Character count of relevant text under this node.
@@ -385,9 +387,9 @@ class Escrape {
     }
 
     /**
-     * Determines whether the element is hidden (i.e., has zero impact to the document).
-     * Elements that are 'visibility: hidden' are still considered visible because they
-     * still have shape and therefore affect the flow of the document.
+     * Determines if an element is hidden, having zero flow impact to the page. Elements
+     * styled as 'visibility: hidden' are considered visible because they have shape and
+     * affect document flow.
      * @param {HTMLElement} node Element to assess. 
      * @param {int} iteration Iteration number. See `nextIteration` method for explanation.
      * @param {boolean} autoIgnore Whether to automatically `ignore` the element if it is hidden.
@@ -401,9 +403,9 @@ class Escrape {
     }
 
     /**
-     * Performantly estimates whether the node is 'probably' a block element based
-     * on either the display or position style explicitly set on the element (i.e.,
-     * not set via stylesheet), or, if none, the default display value of the tag.
+     * Performantly estimates if the node is a block element based on the display or
+     * position style explicitly set on the element (i.e., not set via stylesheet), or, if
+     * none, the default display value of the tag.
      * @param {HTMLElement} node Element to assess. 
      * @returns {boolean} Boolean indicating if the node is probably block-style.
      */
@@ -429,14 +431,13 @@ class Escrape {
     }
 
     /**
-     * Assigns an element a score based on the presence of keywords in the class,
-     * tag name, or id. 
+     * Assigns an element a score based on the presence of keywords in the class, tag name, or id. 
      * @param {int} weight Length-based incremental score to add to the element.
      * @param {HTMLElement} node Element to evaluate.
      * @param {int} iteration Iteration number. See `nextIteration` method for explanation.
      * @returns {boolean} `True` if calculating the initial score; `False` if updating the cached score.
      */
-    #score(weight, node = this.rootNode, iteration = this.iterator, keywords = this.config.keywords) {
+    #score(weight, node = this.rootNode, iteration = this.iterator) {
         const currentScore = this.#get('score', node, iteration)        
         if (currentScore != null) {
             this.#set('score', currentScore + weight, node, iteration)
@@ -446,9 +447,9 @@ class Escrape {
         const searchStr =`.${node.className.toLowerCase().replace(' ', ' .')} #${node.id.toLowerCase()} +${tagName} `
         let highest = 0
         let lowest = 0
-        for (const k in keywords)
+        for (const k in this.config.selectorKeywordScores)
             if (searchStr.includes(k)) {
-                const val = this.config.keywords[k]
+                const val = this.config.selectorKeywordScores[k]
                 if (val > highest)
                     highest = val
                 else if (val < lowest)
