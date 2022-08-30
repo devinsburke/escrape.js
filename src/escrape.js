@@ -222,25 +222,40 @@ class Escrape {
             return node.ownerDocument.title.split(/( - | \| )/)[0].trim()
     }
 
+    /**
+     * Retrieves a list of elements that match the provided selector, excluding those that
+     * are hidden or ignored.
+     * @param {HTMLElement} node Parent element under which to find elements.
+     * @returns {Generator<HTMLElement>} List of elements matching the selector, excluding those that are hidden or ignored.
+     */
     *select(selector, node = this.rootNode) {
         for (const n of node.querySelectorAll(selector))
             if (!this.isIgnored(n) && !this.isHidden(n))
                 yield n
     }
 
-    *selectContainersOf(selector, title = '', node = this.rootNode, ratioThreshold = this.config.containerRatioThreshold) {
+    /**
+     * Finds container elements whose text content is predominantly owned by child elements
+     * that match a particular selector. Predominance is defined by meething the threshold
+     * in `config.containerRatioThreshold`.
+     * @param {string} selector 
+     * @param {string} title Description of the containers, used to chained uses of this method.
+     * @param {HTMLElement} node Parent element under which to find elements.
+     * @returns {Generator<HTMLElement>} List of elements that are predominantly composed by selected elements, excluding those that are hidden or ignored.
+     */
+    *selectContainersOf(selector, title = '', node = this.rootNode) {
         const nodes = [...this.select(selector, node)]
         const property = `${title}Container`
 
         let currentNode
         while (currentNode = nodes.shift()) {
-            this.#set(property, true, currentNode)
+            this.#cacheSet(property, true, currentNode)
             yield currentNode
 
             const parent = currentNode.parentNode
-            if (parent && this.#get(property, parent) == null) {
-                const isContainer = this.calculateTextFill(selector, node) > ratioThreshold
-                this.#set(property, isContainer, parent)
+            if (parent && this.#cacheGet(property, parent) == null) {
+                const isContainer = this.calculateTextFill(selector, node) > this.config.containerRatioThreshold
+                this.#cacheSet(property, isContainer, parent)
                 if (isContainer)
                     nodes.push(parent)
             }
@@ -257,7 +272,15 @@ class Escrape {
             }
     }
 
-    *selectProseElements(selector, node = this.rootNode) {
+    /**
+     * Retrieves a list of elements that match the `config.proseTags` selector and contain
+     * a minimum amount of text, defined by `config.textLengthThreshold`. Excludes hidden
+     * and ignored elements.
+     * @param {HTMLElement} node Parent element under which to find elements.
+     * @returns {Generator<HTMLElement>} List of elements matching the `config.proseTags` selector, excluding those that are hidden or ignored.
+     */
+    *selectProseElements(node = this.rootNode) {
+        const selector = Escrape.tagSelector(this.config.proseTags)
         for (const n of this.select(selector, node))
             if (this.isSignificantTextLength(n))
                 yield n
@@ -267,7 +290,7 @@ class Escrape {
      * Retrieves a list of elements that provide basic page infrastructure, often located
      * in the page's `head` (e.g.: `script`, `style`, `meta`).
      * @param {HTMLElement} node Parent element under which to find abstract elements.
-     * @returns NodeListOf<any> List of elements matching the `config.abstractTags` selector.
+     * @returns {Generator<HTMLElement>} List of elements matching the `config.abstractTags` selector, excluding those that are hidden or ignored.
      */
     selectAbstractElements(node = this.rootNode) {
         const selector = Escrape.tagSelector(this.config.abstractTags)
@@ -277,7 +300,7 @@ class Escrape {
     /**
      * Retrieves a list of elements that are typically noise, such as citations.
      * @param {HTMLElement} node Parent element under which to find aside elements.
-     * @returns {NodeListOf<any>} List of elements matching the `config.asideClasses` and `config.absideRoles` selectors.
+     * @returns {Generator<HTMLElement>} List of elements matching the `config.asideClasses` and `config.asideRoles` selectors, excluding those that are hidden or ignored.
      */
     selectAsideElements(node = this.rootNode) {
         const selector = Escrape.classSelector(this.config.asideClasses)
@@ -290,7 +313,7 @@ class Escrape {
      * (`h2`, `address`, etc.) or interactive (`button`, `menu`, etc.).
      * See `selectContainersOf` for a better understanding of containers and thresholds. 
      * @param {HTMLElement} node Parent element under which to find aside elements.
-     * @returns {Generator<HTMLElement>} List of elements matching the `config.descriptiveTags`, `config.headingTags`, and `config.interactiveTags` selectors.
+     * @returns {Generator<HTMLElement>} List of elements matching the `config.descriptiveTags`, `config.interactiveTags`, `config.headingTags` selectors, excluding those that are hidden or ignored.
      */
     selectVisualContainers(node = this.rootNode) {
         const selector = Escrape.tagSelector(this.config.descriptiveTags)
@@ -308,13 +331,11 @@ class Escrape {
      * `config.textContainerTraversalDepth`.
      * 
      * @param {HTMLElement} node Parent element under which to search.
-     * @returns {HTMLElement} Highest-scoring 
+     * @returns {HTMLElement} Highest-scoring ...
      */
     findArticleContainer(node = this.rootNode) {
         let nodes = []
-        const selector = Escrape.tagSelector(this.config.proseTags)
-
-        for (const n of this.selectProseElements(selector, node)) {
+        for (const n of this.selectProseElements(node)) {
             let weight = Math.min(this.calculateTextLength(n) / this.config.textLengthThreshold, 10) - 1
             let depth = this.config.textContainerTraversalDepth
             const decrement = weight / depth
@@ -331,7 +352,7 @@ class Escrape {
         let bestNode
         let bestScore = 0
         for (const n of nodes) {
-            const score = this.#get('score', n)
+            const score = this.#cacheGet('score', n)
             if (score > bestScore) {
                 bestNode = n
                 bestScore = score
@@ -371,7 +392,7 @@ class Escrape {
      * @returns {int} Character count of relevant text under this node.
      */
     calculateTextLength(node = this.rootNode) {
-        let len = this.#get('textlength', node) || 0
+        let len = this.#cacheGet('textlength', node) || 0
         if (!len) {
             for (let child = node.firstChild; child; child = child.nextSibling) {
                 if (child.nodeType == Node.TEXT_NODE) {
@@ -383,7 +404,7 @@ class Escrape {
                     len += this.calculateTextLength(child)
                 }
             }
-            this.#set('textlength', len, node)
+            this.#cacheSet('textlength', len, node)
         }
         return len
     }
@@ -422,8 +443,8 @@ class Escrape {
 
     ignore(node = this.rootNode, ignore = true) {
         if (!this.isIgnored(node)) {
-            this.#set('ignored', ignore, node)
-            this.#set('textlength', ignore ? 0 : undefined, node)
+            this.#cacheSet('ignored', ignore, node)
+            this.#cacheSet('textlength', ignore ? 0 : undefined, node)
 
             for (const n of node.children)
                 this.ignore(n)
@@ -431,7 +452,7 @@ class Escrape {
     }
 
     isIgnored(node = this.rootNode) {
-        return this.#get('ignored', node)
+        return this.#cacheGet('ignored', node)
     }
 
     isSignificantTextLength(node = this.rootNode) {
@@ -470,12 +491,25 @@ class Escrape {
         return this.config.blockTags.includes(node.tagName.toLowerCase())
     }
 
-    #get(property, node = this.rootNode) {
+    /**
+     * Retrieves a value from the cache of a specified element. To reset the cache, use
+     * the `reset` method.
+     * @param {string} property Name of the property to seek in the cache.
+     * @param {HTMLElement} node Element whose cache is being queried.
+     * @returns {any} Value from the specified element's cache, if there is one.
+     */
+    #cacheGet(property, node = this.rootNode) {
         if (node._escrape && node._escrape[this.#cacheId])
             return node._escrape[this.#cacheId][property]
     }
 
-    #set(property, value, node = this.rootNode) {
+    /**
+     * Sets a value in the cache of a specified element.
+     * @param {string} property Name of the property to set in the cache.
+     * @param {any} value Value to assign to the property specified.
+     * @param {HTMLElement} node Element whose cache is being updated.
+     */
+    #cacheSet(property, value, node = this.rootNode) {
         node._escrape ??= {}
         node._escrape[this.#cacheId] ??= {}
         node._escrape[this.#cacheId][property] = value        
@@ -488,9 +522,9 @@ class Escrape {
      * @returns {boolean} `True` if calculating the initial score; `False` if updating the cached score.
      */
     #score(weight, node = this.rootNode) {
-        const currentScore = this.#get('score', node)        
+        const currentScore = this.#cacheGet('score', node)        
         if (currentScore != null) {
-            this.#set('score', currentScore + weight, node)
+            this.#cacheSet('score', currentScore + weight, node)
             return false
         }
         const tagName = node.tagName.toLowerCase()
@@ -505,7 +539,7 @@ class Escrape {
                 else if (val < lowest)
                     lowest = val
             }
-        this.#set('score', highest + lowest + weight, node)
+        this.#cacheSet('score', highest + lowest + weight, node)
         return true
     }
 }
