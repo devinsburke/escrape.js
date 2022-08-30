@@ -1,8 +1,46 @@
 class Escrape {
-    /** Cache id of this instance. See note on `reset` method. */
-    #cacheId
     /** Cache id for the next new declared instance or reset. */
     static #nextCacheId = 0
+    /**
+     * Generates a string representing a tag selector (e.g.: `p,span,div`).
+     * @param {string[]} items 
+     * @returns {string}
+     */
+    static tagSelector(items) {
+        return items.join(',')
+    }
+    /**
+     * Generates a string representing an id selector (e.g.: `#this,#that`).
+     * @param {string[]} items 
+     * @returns {string}
+     */
+    static idSelector(items) {
+        return '#' + items.join(',#')
+    }
+    /**
+     * Generates a string representing a class selector (e.g.: `.class1,.class2`).
+     * @param {string[]} items 
+     * @returns {string}
+     */
+    static classSelector(items) {
+        return '.' + items.join(',.')
+    }
+    /**
+     * Generates a string representing an attribute selector (e.g.: `[disabled],[data]`).
+     * @param {string[]} items 
+     * @returns {string}
+     */
+    static attributeSelector(items) {
+        return '[' + items.join('],[') + ']'
+    }
+    /**
+     * Generates a string representing a role selector (e.g.: `[role=header],[role=footer]`).
+     * @param {string[]} items 
+     * @returns {string}
+     */
+    static roleSelector(items) {
+        return '[role=' + items.join('],[role=') + ']'
+    }
     /** Default configuration object for Escrape instances. */
     static defaultConfig = {
         /**
@@ -115,6 +153,8 @@ class Escrape {
         textContainerTraversalDepth: 4,
     }
 
+    /** Cache id of this instance. See note on `reset` method. */
+    #cacheId
     /**
      * Constructs a new Escrape instance. No processing occurs during construction, so
      * you may create new instances cheaply.
@@ -230,8 +270,8 @@ class Escrape {
      * @returns NodeListOf<any> List of elements matching the `config.abstractTags` selector.
      */
     selectAbstractElements(node = this.rootNode) {
-        const selector = this.config.abstractTags.join(',')
-        return node.querySelectorAll(selector)
+        const selector = Escrape.tagSelector(this.config.abstractTags)
+        return this.select(selector, node)
     }
 
     /**
@@ -240,8 +280,8 @@ class Escrape {
      * @returns {NodeListOf<any>} List of elements matching the `config.asideClasses` and `config.absideRoles` selectors.
      */
     selectAsideElements(node = this.rootNode) {
-        const selector = '.' + this.config.asideClasses.join(',.')
-            + ',[role=' + this.config.asideRoles.join('],[role=') + ']'
+        const selector = Escrape.classSelector(this.config.asideClasses)
+            + ',' + Escrape.roleSelector(this.config.asideRoles)
         return this.select(selector, node)
     }
 
@@ -253,10 +293,9 @@ class Escrape {
      * @returns {Generator<HTMLElement>} List of elements matching the `config.descriptiveTags`, `config.headingTags`, and `config.interactiveTags` selectors.
      */
     selectVisualContainers(node = this.rootNode) {
-        const selector = this.config.descriptiveTags.join(',')
-            + ',' + this.config.interactiveTags.join(',')
-            + ',' + this.config.headingTags.join(',')
-
+        const selector = Escrape.tagSelector(this.config.descriptiveTags)
+            + ',' + Escrape.tagSelector(this.config.interactiveTags)
+            + ',' + Escrape.tagSelector(this.config.headingTags)
         return this.selectContainersOf(selector, 'visual', node)
     }
     
@@ -273,9 +312,9 @@ class Escrape {
      */
     findArticleContainer(node = this.rootNode) {
         let nodes = []
-        const proseSelector = this.config.proseTags.join(',')
-        const selection = this.selectProseElements(proseSelector, node)
-        for (const n of selection) {
+        const selector = Escrape.tagSelector(this.config.proseTags)
+
+        for (const n of this.selectProseElements(selector, node)) {
             let weight = Math.min(this.calculateTextLength(n) / this.config.textLengthThreshold, 10) - 1
             let depth = this.config.textContainerTraversalDepth
             const decrement = weight / depth
