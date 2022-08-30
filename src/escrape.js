@@ -1,9 +1,7 @@
-export {Escrape}
-
 class Escrape {
-    /**
-     * Default configuration object for Escrape instances.
-     */
+    /** Iterator value for the next new declared instance. */
+    static #iterator = 0
+    /** Default configuration object for Escrape instances. */
     static defaultConfig = {
         /**
          * Dictionary of keywords and their respective scores, used for scoring whether an
@@ -123,8 +121,8 @@ class Escrape {
      */
     constructor(config = Escrape.defaultConfig, element = document.body) {
         this.setConfig(config)
+        this.reset()
         this.rootNode = element
-        this.iterator = 0
     }
 
     /**
@@ -139,11 +137,14 @@ class Escrape {
     }
     
     /**
-     * xxx
-     * @returns {int} Incremented iteration number.
+     * Unignores all elements and resets text length, score, and container estimations
+     * that had been cached for performance. Most useful when the configuration or page
+     * content change significantly.
+     * @returns {Escrape} Same instance of Escrape, for method chaining.
      */
-    nextIteration() {
-        return ++this.iterator
+    reset() {
+        this.iterator = ++Escrape.#iterator
+        return this
     }
 
     /**
@@ -218,7 +219,7 @@ class Escrape {
 
     *selectProseElements(selector, node = this.rootNode, iteration = this.iterator) {
         for (const n of this.select(selector, node, iteration))
-            if (this.hasSignificantTextLength(n, iteration))
+            if (this.isSignificantTextLength(n, iteration))
                 yield n
     }
 
@@ -261,6 +262,18 @@ class Escrape {
         return this.selectContainersOf(selector, 'visual', node, iteration)
     }
     
+    /**
+     * Scores all containers of prose, and returns the highest ranking container (element).
+     * If all containers have negative scores, nothing is returned.
+     * 
+     * Specifically, the parent of each (visible, unignored) element matching the
+     * `config.proseSelector` are evaluated and scored, traversed to a limit defined by
+     * `config.textContainerTraversalDepth`.
+     * 
+     * @param {HTMLElement} node Parent element under which to search.
+     * @param {int} iteration Iteration number. See `nextIteration` method for explanation.
+     * @returns {HTMLElement} Highest-scoring 
+     */
     findArticleContainer(node = this.rootNode, iteration = this.iterator) {
         let nodes = []
         const proseSelector = this.config.proseTags.join(',')
@@ -362,10 +375,14 @@ class Escrape {
         return text.trim()
     }
 
-    ignoreAll(iteration, ...nodeLists) {
-        for (const list of nodeLists)
+    /**
+     * Ignores every node in one or more node lists.
+     * @param  {...NodeList} nodeList List of nodes to ignore. Each parameter must be a separate `NodeList`.
+     */
+    ignoreAll(...nodeList) {
+        for (const list of nodeList)
             for (const e of list)
-                this.ignore(e, iteration)
+                this.ignore(e)
     }
 
     ignore(node = this.rootNode, iteration = this.iterator, ignore = true) {
@@ -382,7 +399,7 @@ class Escrape {
         return this.#get('ignored', node, iteration)
     }
 
-    hasSignificantTextLength(node = this.rootNode, iteration = this.iterator) {
+    isSignificantTextLength(node = this.rootNode, iteration = this.iterator) {
         return this.calculateTextLength(node, iteration) >= this.config.textLengthThreshold
     }
 
