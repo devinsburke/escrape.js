@@ -1,5 +1,5 @@
 class Escrape {
-    /** Cache id for the next new declared instance or reset. */
+    /** Cache id for the next declared instance or reset. */
     static #nextCacheId = 0
     /**
      * Generates a string representing a tag selector (e.g.: `p,span,div`).
@@ -132,7 +132,7 @@ class Escrape {
         /** List of html tags that display as a block element by default (e.g.: div, h1). */
         blockTags: ['address', 'article', 'aside', 'blockquote', 'br', 'canvas', 'dd', 'div', 'fieldset', 'figcaption', 'figure', 'footer', 'form', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'header', 'hr', 'li', 'main', 'nav', 'noscript', 'ol', 'p', 'pre', 'section', 'table', 'td', 'th', 'tr', 'thead', 'tfoot', 'ul', 'video'],
         /** List of html tags that are often direct containers of prose (e.g.: p, span). */
-        proseTags: ['p', 'pre', 'span', 'td'],
+        proseTags: ['p', 'pre', 'span', 'td', 'div'],
         /** List of html tags constituting section headers (e.g.: h1, h2) */
         headingTags: ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'],
         /** List of html tags that serve as non-display page infrastructure (e.g.: `script`, `style`, `meta`). */
@@ -151,6 +151,8 @@ class Escrape {
         textLengthThreshold: 75,
         /** Maximum level to traverse upward when propagating text-length scores to parents. */
         textContainerTraversalDepth: 4,
+        /** CSS class applied to elements via the `subdue` and `subdueOther` methods. */
+        subduedCssClass: 'escrape-deemphasized',
     }
 
     /** Cache id of this instance. See note on `reset` method. */
@@ -176,6 +178,62 @@ class Escrape {
      */
     setConfig(config) {
         this.config = {...Escrape.defaultConfig, ...config}
+    }
+
+    /**
+     * Creates and injects a new `style` element with default CSS defined for classes
+     * used or assigned by Escrape.
+     * 
+     * E.g., assigns `{opacity: 0.3 !important}` to the css class defined in
+     * `config.subduedCssClass`.
+     * @param {HTMLElement} node Element under which to inject a new `style` element.
+     */
+     injectCssEntries(node = this.rootNode) {
+        const newNode = node.ownerDocument.createElement('style')
+        newNode.textContent = `
+            .${this.config.subduedCssClass} { opacity: 0.3 !important; }
+        `
+        node.appendChild(newNode)
+    }
+
+    /**
+     * Applies the CSS class defined in `config.subduedCssClass` to the provided element.
+     * @param {HTMLElement} node Element to subdue.
+     */
+    subdue(node) {
+        node.classList.toggle(this.config.subduedCssClass, true)
+    }
+    
+    /**
+     * Applies the CSS class defined in `config.subduedCssClass` to the each topmost
+     * element not an ancestor to the specified `node`. If `subdueIgnored` is true,
+     * applies the same CSS class to ignored elements descending from `node`.
+     * @param {HTMLElement} node Element of which to subdue surrounding elements.
+     * @param {boolean} subdueIgnored If true, subdues ignored elements descending from `node`.
+     */
+    subdueOther(node, subdueIgnored = true) {
+        let parent = node
+        while (parent) {
+            let sibling = parent
+            while (sibling = sibling.previousElementSibling)
+                this.subdue(sibling)
+            sibling = parent
+            while (sibling = sibling.nextElementSibling)
+                this.subdue(sibling)
+            parent = parent.parentNode
+        }
+
+        if (subdueIgnored) {
+            const traverseFn = n => {
+                for (const c of n.children) {
+                    if (this.isIgnored(c))
+                        this.subdue(c)
+                    else
+                        traverseFn(c)
+                }
+            }
+            traverseFn(node)
+        }
     }
     
     /**
@@ -267,7 +325,7 @@ class Escrape {
             if (n.tagName.toLowerCase() != 'a') {
                 if (this.isBlock(n))
                     yield n
-                if (this.select('a', n).length >= minimumHyperlinks)
+                else if (this.select('a', n).length >= minimumHyperlinks)
                     yield n
             }
     }
@@ -361,7 +419,14 @@ class Escrape {
         return bestNode
     }
 
-    *getTextNodes(node = this.rootNode) {
+    /**
+     * Retrieves the text nodes (`Node`s of `TEXT_NODE` type) descending from the provided
+     * `node`. Any text nodes descending from hidden or ignored elements are omitted.
+     * @param {HTMLElement} node Element under which to retrieve text nodes.
+     * @param {boolean} addBlockWrapperNodes If `true`, text nodes of `\n` will be inserted before and after each block node.
+     * @returns {Generator<HTMLElement>} Generator of text nodes.
+     */
+    *getTextNodes(node = this.rootNode, addBlockWrapperNodes = true) {
         let isBlock = false
         const blockWrapper = document.createTextNode('\n')
         blockWrapper._preserveWhitespace = true
@@ -375,7 +440,7 @@ class Escrape {
                 && !this.isHidden(child)
             ) {
                 const lastBlock = isBlock
-                isBlock = blockWrapper && this.isBlock(child)
+                isBlock = addBlockWrapperNodes && blockWrapper && this.isBlock(child)
                 if (isBlock && !lastBlock)
                     yield blockWrapper
                 yield* this.getTextNodes(child)
@@ -383,6 +448,29 @@ class Escrape {
                     yield blockWrapper
             }
         }
+    }
+
+    /**
+     * Retrieves strings representing all text descending from `node`, omitting hidden and
+     * ignored elements. Each list item signifies a continuous text in a block element.
+     * @param {HTMLElement} node Element under which to retrieve text nodes.
+     * @param {boolean} collapseWhitespace If `true`, all contiguous whitespace is converted to a single space character.
+     * @returns {Generator<HTMLElement>} Generator of strings.
+     */
+    *getTextList(node = this.rootNode, collapseWhitespace = true) {
+        let text = ''
+        for (const n of this.getTextNodes(node)) {
+            if (!n._preserveWhitespace) {
+                text += collapseWhitespace
+                    ? n.textContent.replace(/\s+/g, ' ')
+                    : n.textContent
+            } else if (text.trim()) {
+                yield text.trim()
+                text = ''
+            }
+        }
+        if (text)
+            yield text
     }
 
     /**
@@ -420,19 +508,11 @@ class Escrape {
         return selectedTextLength / textLength
     }
 
-    extractArticleText(node = this.rootNode) {
-        let text = ''
-        const articleNode = this.findArticleContainer(node)
-        if (articleNode)
-            for (const n of this.getTextNodes(articleNode))
-                text += n._preserveWhitespace
-                    ? n.textContent
-                    : n.textContent.replace(/\s+/g, ' ')
-        return text.trim()
-    }
-
     /**
      * Ignores every node in one or more node lists.
+     * 
+     * Ignored elements will not be followed or considered during selection or text-length
+     * analysis by scoring methods. To unignore all ignored elements, call `reset()`.
      * @param  {...NodeList} nodeList List of nodes to ignore. Each parameter must be a separate `NodeList`.
      */
     ignoreAll(...nodeList) {
@@ -441,20 +521,44 @@ class Escrape {
                 this.ignore(e)
     }
 
-    ignore(node = this.rootNode, ignore = true) {
+    /**
+     * Marks the provided node and all its descendents as 'ignored.'
+     * 
+     * Ignored elements will not be followed or considered during selection or text-length
+     * analysis by scoring methods. To unignore all ignored elements, simply declare a new
+     * instance of `Escrape`.
+     * @param {HTMLElement} node Element to ignore.
+     */
+    ignore(node = this.rootNode) {
         if (!this.isIgnored(node)) {
-            this.#cacheSet('ignored', ignore, node)
-            this.#cacheSet('textlength', ignore ? 0 : undefined, node)
+            this.#cacheSet('ignored', true, node)
+            this.#cacheSet('textlength', 0, node)
 
             for (const n of node.children)
                 this.ignore(n)
         }
     }
 
+    /**
+     * Determines if the element has been marked as 'ignored' by the current `Escrape`
+     * instance.
+     * 
+     * Ignored elements will not be followed or considered during selection or text-length
+     * analysis by scoring methods. To unignore all ignored elements, simply declare a new
+     * instance of `Escrape`.
+     * @param {HTMLElement} node Element to evaluate.
+     * @returns {boolean} `true` if element is ignored.
+     */
     isIgnored(node = this.rootNode) {
         return this.#cacheGet('ignored', node)
     }
 
+    /**
+     * Determines if visible, unignored text descending form `node` meets the length
+     * threshold defined in `config.textLengthThreshold`.
+     * @param {HTMLElement} node Element to evaluate.
+     * @returns {boolean} `true` if text length exceeds
+     */
     isSignificantTextLength(node = this.rootNode) {
         return this.calculateTextLength(node) >= this.config.textLengthThreshold
     }
@@ -479,7 +583,7 @@ class Escrape {
      * position style explicitly set on the element (i.e., not set via stylesheet), or, if
      * none, the default display value of the tag.
      * @param {HTMLElement} node Element to assess. 
-     * @returns {boolean} Boolean indicating if the node is probably block-style.
+     * @returns {boolean} `true` if the node is probably block-style.
      */
     isBlock(node = this.rootNode) {
         const display = node.style.display
