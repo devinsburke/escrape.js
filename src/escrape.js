@@ -63,17 +63,18 @@ class Escrape {
             '+section ': 5,
             '+p ': 10,
             'article': 25,
+            'blog': 25,
             'body': 25,
+            'column': 25,
             'content': 25,
             'entry': 25,
             'hentry': 25,
             'main': 25,
             'page': 25,
             'post': 25,
-            'text': 25,
-            'blog': 25,
+            'speakable': 25,
             'story': 25,
-            'column': 25,
+            'text': 25,
             '+dl ': -5,
             '+dt ': -5,
             '+dd ': -5,
@@ -144,7 +145,7 @@ class Escrape {
         /** List of html element roles for non-article, interactive elements (e.g.: alert, banner, tooltip). */
         asideRoles: ['alert', 'alertdialog', 'banner', 'button', 'columnheader', 'combobox', 'complementary', 'dialog', 'directory', 'figure', 'heading', 'img', 'listbox', 'marquee', 'math', 'menu', 'menubar', 'menuitem', 'navigation', 'option', 'search', 'searchbox', 'status', 'toolbar', 'tooltip'],
         /** List of css classes of typical elements like div or span that xxx. */
-        asideClasses: ['blogroll', 'caption', 'citation', 'comment', 'community', 'contact', 'copyright', 'extra', 'foot', 'footer', 'footnote', 'hide-print', 'infobox', 'masthead', 'media', 'meta', 'metadata', 'mw-jump-link', 'mw-revision', 'navigation', 'navigation-not-searchable', 'noprint', 'outbrain', 'pager', 'popup', 'promo', 'reference', 'reference-text', 'references', 'related', 'related-articles', 'remark', 'rss', 's-popover', 'scroll', 'shopping', 'shoutbox', 'sidebar', 'sponsor', 'tag-cloud', 'tags', 'thumb', 'tool', 'user-info', 'widget', 'wikitable'],
+        asideClasses: ['article-meta', 'blogroll', 'caption', 'citation', 'comment', 'community', 'contact', 'copyright', 'extra', 'featured-video', 'foot', 'footer', 'footnote', 'hide-print', 'infobox', 'masthead', 'media', 'meta', 'metadata', 'mw-jump-link', 'mw-revision', 'navigation', 'navigation-not-searchable', 'noprint', 'outbrain', 'pager', 'paywall', 'popup', 'promo', 'reference', 'reference-text', 'references', 'related', 'related-articles', 'remark', 'rss', 's-popover', 'scroll', 'shopping', 'shoutbox', 'sidebar', 'speechkit-container', 'sponsor', 'tag-cloud', 'tags', 'thumb', 'tool', 'user-info', 'video-container', 'video-player', 'widget', 'wikitable'],
         /** Minimum percentage (0-1) of text under an element that must be owned by a selector for the whole element to be considered a container of that selector. */
         containerRatioThreshold: 0.4,
         /** Minimum text length within an element to be considered textual. */
@@ -153,6 +154,8 @@ class Escrape {
         textContainerTraversalDepth: 4,
         /** CSS class applied to elements via the `subdue` and `subdueOther` methods. */
         subduedCssClass: 'escrape-deemphasized',
+        /** CSS class applied to elements via the `highlight` method. */
+        highlightedCssClass: 'escrape-highlighted',
     }
 
     /** Cache id of this instance. See note on `reset` method. */
@@ -192,6 +195,7 @@ class Escrape {
         const newNode = node.ownerDocument.createElement('style')
         newNode.textContent = `
             .${this.config.subduedCssClass} { opacity: 0.3 !important; }
+            .${this.config.highlightedCssClass} { outline: red solid 3px !important; })
         `
         node.appendChild(newNode)
     }
@@ -200,7 +204,7 @@ class Escrape {
      * Applies the CSS class defined in `config.subduedCssClass` to the provided element.
      * @param {HTMLElement} node Element to subdue.
      */
-    subdue(node) {
+    subdue(node = this.rootNode) {
         node.classList.toggle(this.config.subduedCssClass, true)
     }
     
@@ -209,9 +213,9 @@ class Escrape {
      * element not an ancestor to the specified `node`. If `subdueIgnored` is true,
      * applies the same CSS class to ignored elements descending from `node`.
      * @param {HTMLElement} node Element of which to subdue surrounding elements.
-     * @param {boolean} subdueIgnored If true, subdues ignored elements descending from `node`.
+     * @param {boolean} subdueIgnored If true, subdues top-level ignored elements descending from `node`.
      */
-    subdueOther(node, subdueIgnored = true) {
+    subdueOther(node = this.rootNode, subdueIgnored = true) {
         let parent = node
         while (parent) {
             let sibling = parent
@@ -223,17 +227,32 @@ class Escrape {
             parent = parent.parentNode
         }
 
-        if (subdueIgnored) {
-            const traverseFn = n => {
-                for (const c of n.children) {
-                    if (this.isIgnored(c))
-                        this.subdue(c)
-                    else
-                        traverseFn(c)
-                }
-            }
-            traverseFn(node)
+        if (subdueIgnored)
+            this.subdueIgnored(node)
+    }
+
+    /**
+     * Applies the CSS class defined in `config.subduedCssClass` to the each topmost
+     * element descending from `node` that is ignored.
+     * @param {HTMLElement} node Element whose ignored descendents to subdue.
+     */
+    subdueIgnored(node = this.rootNode) {
+        for (const c of node.children) {
+            if (this.isIgnored(c))
+                this.subdue(c)
+            else
+                this.subdueIgnored(c)
         }
+    }
+
+    /**
+     * Adds or removes the CSS class defined in `config.highlightedCssClass`, which by
+     * default adds a red outline to `node`.
+     * @param {HTMLElement} node Element to highlight.
+     * @param {boolean} highlight Whether to add or remove the relevant css class.
+     */
+    highlight(node, highlight = true) {
+        node.classList.toggle(this.config.highlightedCssClass, highlight)
     }
     
     /**
@@ -262,6 +281,9 @@ class Escrape {
         const shortDescription = node.querySelectorAll('.shortdescription')
         if (shortDescription.length == 1)
             return shortDescription[0].innerText
+        const articleSummary = node.querySelectorAll('.article-summary')
+        if (articleSummary.length == 1)
+            return articleSummary[0].innerText
 
         return ''
     }
@@ -312,7 +334,7 @@ class Escrape {
 
             const parent = currentNode.parentNode
             if (parent && this.#cacheGet(property, parent) == null) {
-                const isContainer = this.calculateTextFill(selector, node) > this.config.containerRatioThreshold
+                const isContainer = this.calculateTextFill(selector, parent) > this.config.containerRatioThreshold
                 this.#cacheSet(property, isContainer, parent)
                 if (isContainer)
                     nodes.push(parent)
@@ -321,7 +343,7 @@ class Escrape {
     }
 
     *selectHyperlinkContainers(node = this.rootNode, minimumHyperlinks = 3) {
-        for (const n of this.selectContainersOf('a', 'link', node))
+        for (const n of this.selectContainersOf('a:first-of-type,a:last-of-type', 'link', node))
             if (n.tagName.toLowerCase() != 'a') {
                 if (this.isBlock(n))
                     yield n
